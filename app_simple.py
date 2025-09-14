@@ -410,82 +410,159 @@ def import_barcodes_with_scraping():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
         
-        if not file.filename.endswith(('.xlsx', '.xls')):
-            return jsonify({'error': 'File must be an Excel file (.xlsx or .xls)'}), 400
+        if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
+            return jsonify({'error': 'File must be an Excel file (.xlsx or .xls) or CSV file (.csv)'}), 400
         
-        # Read Excel file
-        from openpyxl import load_workbook
-        wb = load_workbook(file)
-        ws = wb.active
+        # Read file based on extension
+        import csv
+        import io
         
-        # Get headers from first row
-        headers = [cell.value for cell in ws[1]]
-        
-        # Check if barcode column exists
-        if 'barcode' not in headers:
-            return jsonify({'error': 'Excel file must contain a "barcode" column'}), 400
-        
-        # Process barcodes
-        processed_count = 0
-        scraped_count = 0
-        skipped_count = 0
-        errors = []
-        
-        print(f"Starting barcode import and scraping...")
-        
-        for row_num in range(2, ws.max_row + 1):
-            try:
-                row_data = {}
-                for col_num, header in enumerate(headers, 1):
-                    cell_value = ws.cell(row=row_num, column=col_num).value
-                    row_data[header] = cell_value
-                
-                barcode = str(row_data['barcode']).strip()
-                if not barcode or barcode == 'None':
-                    continue
-                
-                print(f"Processing barcode: {barcode}")
-                
-                # Check if barcode already exists in barcode_cache
-                existing_doc = db.collection('barcode_cache').document(barcode).get()
-                if existing_doc.exists:
-                    print(f"Barcode {barcode} already exists, skipping")
-                    skipped_count += 1
-                    continue
-                
-                # Try to scrape product data
-                url = f"https://smartconsumer-beta.org/01/{barcode}"
-                product_data = scrape_product_data(barcode, url)
-                
-                if product_data and isinstance(product_data, dict) and product_data.get('name') != 'N/A':
-                    # Add to barcode_cache collection
-                    product_data['barcode'] = barcode
-                    product_data['createdAt'] = datetime.now().isoformat()
-                    product_data['updatedAt'] = datetime.now().isoformat()
-                    product_data['scanCount'] = 1
-                    product_data['syncStatus'] = 'pending'
-                    product_data['sortOrder'] = 0
+        if file.filename.endswith('.csv'):
+            # Read CSV file
+            file_content = file.read().decode('utf-8')
+            csv_reader = csv.DictReader(io.StringIO(file_content))
+            rows = list(csv_reader)
+            
+            if not rows:
+                return jsonify({'error': 'CSV file is empty'}), 400
+            
+            headers = list(rows[0].keys())
+            
+            # Check if barcode column exists
+            if 'barcode' not in headers:
+                return jsonify({'error': 'CSV file must contain a "barcode" column'}), 400
+            
+            # Process barcodes
+            processed_count = 0
+            scraped_count = 0
+            skipped_count = 0
+            errors = []
+            
+            print(f"Starting CSV barcode import and scraping...")
+            
+            for row_data in rows:
+                try:
+                    barcode = str(row_data['barcode']).strip()
+                    if not barcode or barcode == 'None':
+                        continue
                     
-                    db.collection('barcode_cache').document(barcode).set(product_data)
-                    scraped_count += 1
-                    print(f"✅ Successfully scraped: {product_data.get('name', 'Unknown')}")
-                else:
-                    # Add to unfound_barcodes for retry
-                    unfound_data = {
-                        'barcode': barcode,
-                        'createdAt': datetime.now().isoformat(),
-                        'lastRetry': None,
-                        'retryCount': 0
-                    }
-                    db.collection('unfound_barcodes').add(unfound_data)
-                    print(f"❌ Could not scrape barcode {barcode}, added to unfound list")
-                
-                processed_count += 1
-                
-            except Exception as e:
-                error_msg = f"Row {row_num}: {str(e)}"
-                errors.append(error_msg)
-                print(f"Error processing row {row_num}: {e}")
+                    print(f"Processing barcode: {barcode}")
+                    
+                    # Check if barcode already exists in barcode_cache
+                    existing_doc = db.collection('barcode_cache').document(barcode).get()
+                    if existing_doc.exists:
+                        print(f"Barcode {barcode} already exists, skipping")
+                        skipped_count += 1
+                        continue
+                    
+                    # Try to scrape product data
+                    url = f"https://smartconsumer-beta.org/01/{barcode}"
+                    product_data = scrape_product_data(barcode, url)
+                    
+                    if product_data and isinstance(product_data, dict) and product_data.get('name') != 'N/A':
+                        # Add to barcode_cache collection
+                        product_data['barcode'] = barcode
+                        product_data['createdAt'] = datetime.now().isoformat()
+                        product_data['updatedAt'] = datetime.now().isoformat()
+                        product_data['scanCount'] = 1
+                        product_data['syncStatus'] = 'pending'
+                        product_data['sortOrder'] = 0
+                        
+                        db.collection('barcode_cache').document(barcode).set(product_data)
+                        scraped_count += 1
+                        print(f"✅ Successfully scraped: {product_data.get('name', 'Unknown')}")
+                    else:
+                        # Add to unfound_barcodes for retry
+                        unfound_data = {
+                            'barcode': barcode,
+                            'createdAt': datetime.now().isoformat(),
+                            'lastRetry': None,
+                            'retryCount': 0
+                        }
+                        db.collection('unfound_barcodes').add(unfound_data)
+                        print(f"❌ Could not scrape barcode {barcode}, added to unfound list")
+                    
+                    processed_count += 1
+                    
+                except Exception as e:
+                    error_msg = f"Row {processed_count + 1}: {str(e)}"
+                    errors.append(error_msg)
+                    print(f"Error processing row: {e}")
+        
+        else:
+            # Read Excel file
+            from openpyxl import load_workbook
+            wb = load_workbook(file)
+            ws = wb.active
+            
+            # Get headers from first row
+            headers = [cell.value for cell in ws[1]]
+            
+            # Check if barcode column exists
+            if 'barcode' not in headers:
+                return jsonify({'error': 'Excel file must contain a "barcode" column'}), 400
+            
+            # Process barcodes
+            processed_count = 0
+            scraped_count = 0
+            skipped_count = 0
+            errors = []
+            
+            print(f"Starting Excel barcode import and scraping...")
+            
+            for row_num in range(2, ws.max_row + 1):
+                try:
+                    row_data = {}
+                    for col_num, header in enumerate(headers, 1):
+                        cell_value = ws.cell(row=row_num, column=col_num).value
+                        row_data[header] = cell_value
+                    
+                    barcode = str(row_data['barcode']).strip()
+                    if not barcode or barcode == 'None':
+                        continue
+                    
+                    print(f"Processing barcode: {barcode}")
+                    
+                    # Check if barcode already exists in barcode_cache
+                    existing_doc = db.collection('barcode_cache').document(barcode).get()
+                    if existing_doc.exists:
+                        print(f"Barcode {barcode} already exists, skipping")
+                        skipped_count += 1
+                        continue
+                    
+                    # Try to scrape product data
+                    url = f"https://smartconsumer-beta.org/01/{barcode}"
+                    product_data = scrape_product_data(barcode, url)
+                    
+                    if product_data and isinstance(product_data, dict) and product_data.get('name') != 'N/A':
+                        # Add to barcode_cache collection
+                        product_data['barcode'] = barcode
+                        product_data['createdAt'] = datetime.now().isoformat()
+                        product_data['updatedAt'] = datetime.now().isoformat()
+                        product_data['scanCount'] = 1
+                        product_data['syncStatus'] = 'pending'
+                        product_data['sortOrder'] = 0
+                        
+                        db.collection('barcode_cache').document(barcode).set(product_data)
+                        scraped_count += 1
+                        print(f"✅ Successfully scraped: {product_data.get('name', 'Unknown')}")
+                    else:
+                        # Add to unfound_barcodes for retry
+                        unfound_data = {
+                            'barcode': barcode,
+                            'createdAt': datetime.now().isoformat(),
+                            'lastRetry': None,
+                            'retryCount': 0
+                        }
+                        db.collection('unfound_barcodes').add(unfound_data)
+                        print(f"❌ Could not scrape barcode {barcode}, added to unfound list")
+                    
+                    processed_count += 1
+                    
+                except Exception as e:
+                    error_msg = f"Row {row_num}: {str(e)}"
+                    errors.append(error_msg)
+                    print(f"Error processing row {row_num}: {e}")
         
         response = {
             'status': 'success',
@@ -561,11 +638,11 @@ def scrape_product_data(barcode, url):
             name_element = soup.find('h1')
             if name_element:
                 product_name = name_element.get_text().strip()
-                if product_name and product_name != '':
+                if product_name and product_name != '' and product_name != 'string indices must be integers, not \'str\'':
                     product_data['name'] = product_name
                     print(f"📦 Found product name: {product_name}")
                 else:
-                    print(f"⚠️ Empty product name for barcode: {barcode}")
+                    print(f"⚠️ Empty or invalid product name for barcode: {barcode}")
             else:
                 print(f"⚠️ No h1 element found for barcode: {barcode}")
         except Exception as e:

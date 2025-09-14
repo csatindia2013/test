@@ -530,8 +530,8 @@
                     <div class="col-md-8">
                         <h6><i class="fas fa-info-circle me-2"></i>How it works:</h6>
                         <ul>
-                            <li>Upload an Excel file (.xlsx or .xls) containing barcodes</li>
-                            <li>Excel file must have a "barcode" column</li>
+                            <li>Upload an Excel file (.xlsx or .xls) or CSV file (.csv) containing barcodes</li>
+                            <li>File must have a "barcode" column</li>
                             <li>System automatically scrapes product data from Smart Consumer</li>
                             <li>Successfully scraped products are added to the database</li>
                             <li>Failed barcodes are added to the unfound list for retry</li>
@@ -541,9 +541,9 @@
                         <div class="mt-4">
                             <h6><i class="fas fa-upload me-2"></i>Import Barcodes:</h6>
                             <div class="mb-3">
-                                <label for="barcode-file" class="form-label">Select Excel File</label>
-                                <input type="file" class="form-control" id="barcode-file" accept=".xlsx,.xls">
-                                <div class="form-text">Excel file must contain a "barcode" column</div>
+                                <label for="barcode-file" class="form-label">Select File</label>
+                                <input type="file" class="form-control" id="barcode-file" accept=".xlsx,.xls,.csv">
+                                <div class="form-text">Excel (.xlsx, .xls) or CSV (.csv) file must contain a "barcode" column</div>
                             </div>
                             <button class="btn btn-primary" onclick="importBarcodes()" id="import-barcodes-btn">
                                 <i class="fas fa-upload me-1"></i>Import & Scrape Barcodes
@@ -2744,8 +2744,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-                showAlert('Please select an Excel file (.xlsx or .xls)', 'warning');
+            if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
+                showAlert('Please select an Excel file (.xlsx or .xls) or CSV file (.csv)', 'warning');
                 return;
             }
             
