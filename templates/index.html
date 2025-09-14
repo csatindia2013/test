@@ -1,0 +1,2297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products & Categories Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        .sidebar .nav-link:hover {
+            color: white;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .sidebar .nav-link.active {
+            color: white;
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        .main-content {
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 8px;
+        }
+        .btn-success {
+            background: linear-gradient(45deg, #43e97b, #38f9d7);
+            border: none;
+            border-radius: 8px;
+        }
+        .btn-danger {
+            background: linear-gradient(45deg, #f093fb, #f5576c);
+            border: none;
+            border-radius: 8px;
+        }
+        .table {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .badge {
+            border-radius: 20px;
+        }
+        
+        /* Table column width optimization */
+        .table th, .table td {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            vertical-align: middle;
+        }
+        
+        /* Checkbox column - minimal width */
+        .table td:first-child, .table th:first-child {
+            width: 4%;
+            text-align: center;
+            padding: 8px 4px;
+        }
+        
+        /* Category column styling */
+        .table td:nth-child(2), .table th:nth-child(2) {
+            font-size: 0.9em;
+            max-width: 100px;
+        }
+        
+        /* Barcode column styling */
+        .table td:nth-child(3), .table th:nth-child(3) {
+            font-size: 0.85em;
+            max-width: 120px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        /* Name column - allow wrapping for better readability */
+        .table td:nth-child(4), .table th:nth-child(4) {
+            white-space: normal;
+            word-wrap: break-word;
+            max-width: 180px;
+        }
+        
+        /* Price columns styling */
+        .table td:nth-child(5), .table td:nth-child(6), 
+        .table th:nth-child(5), .table th:nth-child(6) {
+            text-align: right;
+            font-weight: 500;
+            width: 8%;
+        }
+        
+        /* UseInFirstStart column */
+        .table td:nth-child(7), .table th:nth-child(7) {
+            text-align: center;
+            width: 12%;
+        }
+        
+        /* Image column styling */
+        .table td:nth-child(8), .table th:nth-child(8) {
+            text-align: center;
+            width: 8%;
+        }
+        
+        /* Actions column styling */
+        .table td:nth-child(9), .table th:nth-child(9) {
+            text-align: center;
+            width: 7%;
+        }
+        
+        /* Inline editing styles */
+        .editable-cell {
+            cursor: pointer;
+            position: relative;
+            transition: background-color 0.2s;
+        }
+        
+        .editable-cell:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .editable-cell.editing {
+            background-color: #e3f2fd;
+            padding: 0;
+        }
+        
+        .cell-input {
+            width: 100%;
+            border: none;
+            background: transparent;
+            padding: 8px;
+            font-size: inherit;
+            font-family: inherit;
+        }
+        
+        .cell-input:focus {
+            outline: 2px solid #007bff;
+            outline-offset: -2px;
+        }
+        
+        .cell-actions {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 2px;
+            display: none;
+            z-index: 10;
+        }
+        
+        .editable-cell.editing .cell-actions {
+            display: block;
+        }
+        
+        .cell-actions button {
+            padding: 2px 6px;
+            margin: 0 1px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .cell-actions .save-btn {
+            color: #28a745;
+        }
+        
+        .cell-actions .cancel-btn {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+<div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-lg-2 d-md-block sidebar">
+                <div class="position-sticky pt-3">
+                    <div class="text-center mb-4">
+                        <h4 class="text-white">
+                            <i class="fas fa-database me-2"></i>
+                            Firebase Manager
+                        </h4>
+        </div>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#" onclick="showSection('products')">
+                                <i class="fas fa-box me-2"></i>
+                                Products
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" onclick="showSection('categories')">
+                                <i class="fas fa-tags me-2"></i>
+                                Categories
+                            </a>
+                        </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('unfound-barcodes')">
+                        <i class="fas fa-barcode me-2"></i>
+                        Unfound Barcodes
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('data-getter')">
+                        <i class="fas fa-download me-2"></i>
+                        Data Getter
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('background-processor')">
+                        <i class="fas fa-cogs me-2"></i>
+                        Background Processor
+                    </a>
+                </li>
+                    </ul>
+    </div>
+            </nav>
+
+            <!-- Main content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-content">
+                <!-- Products Section -->
+                <div id="products-section" class="content-section">
+                    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3">
+                        <h1 class="h2">Products Management</h1>
+                        <div>
+                            <button class="btn btn-outline-info me-2" onclick="debugFirebase()">
+                                <i class="fas fa-bug me-2"></i>Debug Firebase
+                            </button>
+                            <button class="btn btn-outline-success me-2" onclick="createSampleProduct()">
+                                <i class="fas fa-plus me-2"></i>Create Sample
+                            </button>
+                            <button class="btn btn-primary" onclick="showAddProductModal()">
+                                <i class="fas fa-plus me-2"></i>Add Product
+            </button>
+            </div>
+        </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h5 class="mb-0">Products List</h5>
+    </div>
+                                <div class="col-auto">
+                                    <button id="bulk-delete-btn" class="btn btn-danger me-2" disabled onclick="bulkDeleteProducts()">
+                                        <i class="fas fa-trash me-1"></i>Delete Selected
+                                    </button>
+                                    <button class="btn btn-success me-2" onclick="exportProducts()">
+                                        <i class="fas fa-file-excel me-1"></i>Export Excel
+                                    </button>
+                                    <button class="btn btn-info me-2" onclick="showImportModal('products')">
+                                        <i class="fas fa-file-import me-1"></i>Import Excel
+                                    </button>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="search-products" placeholder="Search products...">
+                                        <button class="btn btn-outline-secondary" onclick="searchProducts()">
+                                            <i class="fas fa-search"></i>
+                                        </button>
+            </div>
+        </div>
+    </div>
+            </div>
+            <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th style="width: 4%;">
+                                        <input type="checkbox" id="select-all-products" class="form-check-input" onclick="toggleSelectAll()">
+                                    </th>
+                                    <th style="width: 15%;">Category</th>
+                                    <th style="width: 15%;">Barcode</th>
+                                    <th style="width: 25%;">Name</th>
+                                    <th style="width: 8%;">MRP</th>
+                                    <th style="width: 8%;">Price</th>
+                                    <th style="width: 12%;">UseInFirstStart</th>
+                                    <th style="width: 8%;">Image</th>
+                                    <th style="width: 7%;">Actions</th>
+                                </tr>
+                            </thead>
+                                    <tbody id="products-tbody">
+                                    </tbody>
+                                </table>
+        </div>
+    </div>
+            </div>
+        </div>
+
+    <!-- Data Getter Section -->
+    <div id="data-getter-section" class="content-section" style="display: none;">
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3">
+            <h1 class="h2">Data Getter - Smart Consumer</h1>
+</div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Fetch Product Data from Smart Consumer</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="barcode-input" class="form-label">Enter Barcode</label>
+                            <input type="text" class="form-control" id="barcode-input" placeholder="e.g., 8908021170455">
+                    </div>
+                        <button class="btn btn-primary" onclick="fetchProductData()">
+                            <i class="fas fa-search me-2"></i>Fetch Data
+                        </button>
+                        <button class="btn btn-success ms-2" onclick="addToUnfoundBarcodes()" id="add-to-unfound-btn" disabled>
+                            <i class="fas fa-plus me-2"></i>Add to Unfound Barcodes
+                        </button>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="alert alert-info">
+                            <h6><i class="fas fa-info-circle me-2"></i>How it works:</h6>
+                            <ul class="mb-0">
+                                <li>Enter a barcode number</li>
+                                <li>Click "Fetch Data" to get product information</li>
+                                <li>If product is found, you can add it to your database</li>
+                                <li>If not found, add it to unfound barcodes</li>
+                            </ul>
+                </div>
+            </div>
+        </div>
+                
+                <div id="loading-spinner" class="text-center mt-3" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+    </div>
+                    <p class="mt-2">Fetching product data...</p>
+</div>
+
+                <div id="product-data-result" class="mt-3" style="display: none;">
+                    <h6>Product Information:</h6>
+        <div class="card">
+            <div class="card-body">
+                            <div id="product-details"></div>
+                    </div>
+                </div>
+            </div>
+
+                <div id="error-message" class="alert alert-danger mt-3" style="display: none;">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <span id="error-text"></span>
+        </div>
+    </div>
+        </div>
+    </div>
+
+    <!-- Background Processor Section -->
+    <div id="background-processor-section" class="content-section" style="display: none;">
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3">
+            <h1 class="h2">Background Processor</h1>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Automatic Unfound Barcodes Retry</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6><i class="fas fa-info-circle me-2"></i>How it works:</h6>
+                        <ul>
+                            <li>Automatically retries unfound barcodes every 30 minutes</li>
+                            <li>Only retries barcodes not checked in the last 24 hours</li>
+                            <li>Successfully found products are moved to the products collection</li>
+                            <li>Failed barcodes are updated with retry timestamps</li>
+                            <li>Includes rate limiting to avoid being blocked</li>
+                        </ul>
+                        
+                        <div class="mt-4">
+                            <h6><i class="fas fa-play me-2"></i>Controls:</h6>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-success" onclick="startBackgroundProcessor()">
+                                    <i class="fas fa-play me-1"></i>Start Processor
+                                </button>
+                                <button class="btn btn-danger" onclick="stopBackgroundProcessor()">
+                                    <i class="fas fa-stop me-1"></i>Stop Processor
+                                </button>
+                                <button class="btn btn-primary" onclick="runBackgroundProcessorNow()">
+                                    <i class="fas fa-bolt me-1"></i>Run Now
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-chart-bar me-2"></i>Status:</h6>
+                        <div id="processor-status">
+                            <div class="alert alert-info">
+                                <i class="fas fa-spinner fa-spin me-2"></i>Loading status...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Processed Barcodes Table -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <h6><i class="fas fa-list me-2"></i>Recently Processed Barcodes:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th style="width: 20%;">Barcode</th>
+                                        <th style="width: 25%;">Product Name</th>
+                                        <th style="width: 15%;">Status</th>
+                                        <th style="width: 20%;">Processed At</th>
+                                        <th style="width: 20%;">Result</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="processed-barcodes-tbody">
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted">No barcodes processed yet</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-primary" onclick="loadProcessedBarcodes()">
+                                <i class="fas fa-sync me-1"></i>Refresh
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="clearProcessedBarcodes()">
+                                <i class="fas fa-trash me-1"></i>Clear History
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unfound Barcodes Section -->
+    <div id="unfound-barcodes-section" class="content-section" style="display: none;">
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3">
+            <h1 class="h2">Unfound Barcodes Management</h1>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Unfound Barcodes List</h5>
+                            <div>
+                    <button id="bulk-delete-barcodes-btn" class="btn btn-danger me-2" disabled onclick="bulkDeleteUnfoundBarcodes()">
+                        <i class="fas fa-trash"></i> Delete Selected (0)
+                    </button>
+                    <button class="btn btn-success me-2" onclick="exportUnfoundBarcodes()">
+                        <i class="fas fa-file-excel"></i> Export Excel
+                    </button>
+                    <button class="btn btn-warning me-2" onclick="addSampleUnfoundBarcodes()">
+                        <i class="fas fa-plus"></i> Add Sample Data
+                    </button>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="search-barcodes" placeholder="Search barcodes...">
+                        <button class="btn btn-outline-secondary" onclick="searchUnfoundBarcodes()">
+                            <i class="fas fa-search"></i>
+                        </button>
+                            </div>
+                        </div>
+                    </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th style="width: 4%;">
+                                    <input type="checkbox" id="select-all-barcodes" class="form-check-input" onclick="toggleSelectAllBarcodes()">
+                                </th>
+                                <th style="width: 18%;">Barcode</th>
+                                <th style="width: 20%;">Timestamp</th>
+                                <th style="width: 15%;">Device ID</th>
+                                <th style="width: 15%;">Location</th>
+                                <th style="width: 13%;">Status</th>
+                                <th style="width: 15%;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unfound-barcodes-tbody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Categories Section -->
+                <div id="categories-section" class="content-section" style="display: none;">
+                    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3">
+                        <h1 class="h2">Categories Management</h1>
+                        <button class="btn btn-primary" onclick="showAddCategoryModal()">
+                            <i class="fas fa-plus me-2"></i>Add Category
+                        </button>
+</div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Categories List</h5>
+                <div>
+                    <button id="bulk-delete-categories-btn" class="btn btn-danger me-2" disabled onclick="bulkDeleteCategories()">
+                        <i class="fas fa-trash"></i> Delete Selected (0)
+                    </button>
+                    <button class="btn btn-success me-2" onclick="exportCategories()">
+                        <i class="fas fa-file-excel"></i> Export Excel
+                    </button>
+                    <button class="btn btn-info me-2" onclick="showImportModal('categories')">
+                        <i class="fas fa-file-import"></i> Import Excel
+                    </button>
+                    <button class="btn btn-primary" onclick="showAddCategoryModal()">
+                        <i class="fas fa-plus"></i> Add Category
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 4%;">
+                                                <input type="checkbox" id="select-all-categories" class="form-check-input" onclick="toggleSelectAllCategories()">
+                                            </th>
+                                            <th style="width: 25%;">Name</th>
+                                            <th style="width: 40%;">Description</th>
+                                            <th style="width: 15%;">Status</th>
+                                            <th style="width: 16%;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="categories-tbody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Add Product Modal -->
+    <div class="modal fade" id="productModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="productModalTitle">Add Product</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+                <div class="modal-body">
+                    <form id="product-form">
+                        <input type="hidden" id="product-id">
+                <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="product-name" class="form-label">Product Name *</label>
+                                    <input type="text" class="form-control" id="product-name" required>
+                            </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="product-brand" class="form-label">Brand</label>
+                                    <input type="text" class="form-control" id="product-brand">
+                        </div>
+                    </div>
+                            </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="product-category" class="form-label">Category</label>
+                                    <select class="form-control" id="product-category" required>
+                                        <option value="">Select a category...</option>
+                                    </select>
+                            </div>
+                        </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="product-barcode" class="form-label">Barcode</label>
+                                    <input type="text" class="form-control" id="product-barcode">
+                    </div>
+                            </div>
+                            </div>
+<div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="product-mrp" class="form-label">MRP</label>
+                                    <input type="number" class="form-control" id="product-mrp" step="0.01">
+                        </div>
+                    </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="product-sale-price" class="form-label">Sale Price</label>
+                                    <input type="number" class="form-control" id="product-sale-price" step="0.01">
+                            </div>
+            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="product-stock" class="form-label">Stock</label>
+                                    <input type="number" class="form-control" id="product-stock" value="0">
+        </div>
+    </div>
+            </div>
+                        <div class="mb-3">
+                            <label for="product-image-url" class="form-label">Image URL</label>
+                            <input type="url" class="form-control" id="product-image-url">
+                            </div>
+                        <div class="mb-3">
+                            <label for="product-description" class="form-label">Description</label>
+                            <textarea class="form-control" id="product-description" rows="3"></textarea>
+                            </div>
+                    </form>
+                        </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveProduct()">Save Product</button>
+                    </div>
+                            </div>
+                            </div>
+                        </div>
+
+    <!-- Add Category Modal -->
+    <div class="modal fade" id="categoryModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="categoryModalTitle">Add Category</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                <div class="modal-body">
+                    <form id="category-form">
+                        <input type="hidden" id="category-id">
+                        <div class="mb-3">
+                            <label for="category-name" class="form-label">Category Name *</label>
+                            <input type="text" class="form-control" id="category-name" required>
+                            </div>
+                        <div class="mb-3">
+                            <label for="category-description" class="form-label">Description</label>
+                            <textarea class="form-control" id="category-description" rows="3"></textarea>
+                            </div>
+                    </form>
+                        </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveCategory()">Save Category</button>
+                    </div>
+                            </div>
+        </div>
+    </div>
+
+
+    <!-- Alert Container -->
+    <div id="alert-container" class="position-fixed top-0 end-0 p-3" style="z-index: 1050;"></div>
+
+    <!-- Import Modal -->
+    <div class="modal fade" id="importModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="importModalTitle">Import Excel File</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+                <div class="modal-body">
+                    <form id="importForm" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="importFile" class="form-label">Select Excel File</label>
+                            <input type="file" class="form-control" id="importFile" accept=".xlsx,.xls" required>
+                            <div class="form-text">Supported formats: .xlsx, .xls</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="alert alert-info">
+                                <strong>Required Columns:</strong>
+                                <div id="requiredColumns"></div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="overwriteData">
+                                <label class="form-check-label" for="overwriteData">
+                                    Overwrite existing data (if any)
+                                </label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="importData()">
+                        <i class="fas fa-upload me-1"></i>Import Data
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+        // Inline editing functionality
+        let editingCell = null;
+        let originalValue = null;
+        
+        function makeCellEditable(cell, field, productId) {
+            cell.classList.add('editable-cell');
+            cell.addEventListener('click', function(e) {
+                if (editingCell && editingCell !== cell) {
+                    cancelEdit();
+                }
+                
+                // Handle boolean fields specially
+                if (cell.dataset.type === 'boolean') {
+                    toggleBooleanField(cell, field, productId);
+                } else {
+                    startEdit(cell, field, productId);
+                }
+            });
+        }
+        
+        function toggleBooleanField(cell, field, productId) {
+            const currentValue = cell.querySelector('.badge').textContent.trim() === 'True';
+            const newValue = !currentValue;
+            
+            // Send update to server
+            fetch(`/api/products/${productId}/field`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    field: field,
+                    value: newValue
+                })
+            })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                    showAlert(`Error updating ${field}: ${data.error}`, 'danger');
+                } else {
+                    // Update the cell with new value
+                    const badge = cell.querySelector('.badge');
+                    badge.textContent = newValue ? 'True' : 'False';
+                    badge.className = `badge ${newValue ? 'bg-success' : 'bg-secondary'}`;
+                    showAlert(`${field} updated successfully`, 'success');
+                }
+        })
+        .catch(error => {
+                console.error('Error:', error);
+                showAlert(`Error updating ${field}`, 'danger');
+            });
+        }
+        
+        function startEdit(cell, field, productId) {
+            if (editingCell) return;
+            
+            editingCell = cell;
+            originalValue = cell.textContent.trim();
+            
+            // Clean up the original value for editing
+            let cleanValue = originalValue;
+            if (field === 'mrp' || field === 'salePrice') {
+                cleanValue = originalValue.replace('₹', '').trim();
+            }
+            
+            cell.classList.add('editing');
+            
+            let inputElement;
+            
+            // Handle category field specially with dropdown
+            if (field === 'category') {
+                inputElement = document.createElement('select');
+                inputElement.className = 'cell-input';
+                
+                // Add default option
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = 'Select category...';
+                inputElement.appendChild(defaultOption);
+                
+                // Add category options
+                currentCategories.forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category.name;
+                    option.textContent = category.name;
+                    if (category.name === cleanValue) {
+                        option.selected = true;
+                    }
+                    inputElement.appendChild(option);
+                });
+            } else {
+                // Regular text input for other fields
+                inputElement = document.createElement('input');
+                inputElement.type = 'text';
+                inputElement.className = 'cell-input';
+                inputElement.value = cleanValue;
+            }
+            
+            // Create action buttons
+            const actions = document.createElement('div');
+            actions.className = 'cell-actions';
+            actions.innerHTML = `
+                <button class="save-btn" onclick="saveEdit('${field}', '${productId}')" title="Save">✓</button>
+                <button class="cancel-btn" onclick="cancelEdit()" title="Cancel">✗</button>
+            `;
+            
+            // Replace cell content
+            cell.innerHTML = '';
+            cell.appendChild(inputElement);
+            cell.appendChild(actions);
+            
+            // Focus and select text (for text inputs)
+            if (field !== 'category') {
+                inputElement.focus();
+                inputElement.select();
+            }
+            
+            // Handle Enter and Escape keys
+            inputElement.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    saveEdit(field, productId);
+                } else if (e.key === 'Escape') {
+                    cancelEdit();
+                }
+            });
+        }
+        
+        function saveEdit(field, productId) {
+            if (!editingCell) return;
+            
+            const input = editingCell.querySelector('.cell-input');
+            let newValue = input.value.trim();
+            
+            // Convert to appropriate data type
+            if (field === 'mrp' || field === 'salePrice') {
+                newValue = parseFloat(newValue) || 0;
+            }
+            
+            if (newValue === originalValue) {
+                cancelEdit();
+                return;
+            }
+            
+            // Send update to server
+            fetch(`/api/products/${productId}/field`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    field: field,
+                    value: newValue
+                })
+            })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                    showAlert(`Error updating ${field}: ${data.error}`, 'danger');
+                    cancelEdit();
+                } else {
+                    // Update the cell with new value
+                    let displayValue = newValue;
+                    if (field === 'mrp' || field === 'salePrice') {
+                        displayValue = `₹${newValue}`;
+                    }
+                    editingCell.textContent = displayValue;
+                    editingCell.classList.remove('editing');
+                    editingCell = null;
+                    originalValue = null;
+                    showAlert(`${field} updated successfully`, 'success');
+                }
+        })
+        .catch(error => {
+                console.error('Error:', error);
+                showAlert(`Error updating ${field}`, 'danger');
+                cancelEdit();
+            });
+        }
+        
+        function cancelEdit() {
+            if (!editingCell) return;
+            
+            editingCell.textContent = originalValue;
+            editingCell.classList.remove('editing');
+            editingCell = null;
+            originalValue = null;
+        }
+        let editingProductId = null;
+        let editingCategoryId = null;
+        let currentProducts = [];
+        let currentCategories = [];
+        let currentUnfoundBarcodes = [];
+
+        // Populate category dropdown
+        function populateCategoryDropdown() {
+            const categorySelect = document.getElementById('product-category');
+            categorySelect.innerHTML = '<option value="">Select a category...</option>';
+            
+            currentCategories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.name;
+                option.textContent = category.name;
+                categorySelect.appendChild(option);
+            });
+        }
+
+        // Initialize dashboard
+document.addEventListener('DOMContentLoaded', function() {
+            loadProducts();
+        });
+
+        // Navigation functions
+        function showSection(sectionName) {
+            // Hide all sections
+            document.querySelectorAll('.content-section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Remove active class from all nav links
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            // Show selected section
+            document.getElementById(sectionName + '-section').style.display = 'block';
+            
+            // Add active class to clicked nav link
+            event.target.classList.add('active');
+            
+        // Load section-specific data
+        if (sectionName === 'products') {
+            loadProducts();
+        } else if (sectionName === 'categories') {
+            loadCategories();
+        } else if (sectionName === 'unfound-barcodes') {
+            loadUnfoundBarcodes();
+        } else if (sectionName === 'data-getter') {
+            // Clear any previous data when switching to data getter
+            clearDataGetterResults();
+        } else if (sectionName === 'background-processor') {
+            // Load background processor status and processed barcodes
+            loadBackgroundProcessorStatus();
+            loadProcessedBarcodes();
+        }
+        }
+
+        // Product management functions
+        async function loadProducts() {
+            try {
+                const response = await fetch('/api/products');
+                const data = await response.json();
+                
+                // Handle both array response and object with products property
+                currentProducts = Array.isArray(data) ? data : (data.products || []);
+                renderProductsTable(currentProducts);
+            } catch (error) {
+                console.error('Error loading products:', error);
+                showAlert('Error loading products', 'danger');
+            }
+        }
+
+        function renderProductsTable(products) {
+            const tbody = document.getElementById('products-tbody');
+            
+            if (products.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No products found</td></tr>';
+                return;
+            }
+            
+            const html = products.map(product => `
+                <tr>
+                    <td>
+                        <input type="checkbox" class="form-check-input product-checkbox" value="${product.id}" onchange="updateBulkDeleteButton()">
+                    </td>
+                    <td class="editable-cell" data-field="category" data-product-id="${product.id}">${product.category || '-'}</td>
+                    <td class="editable-cell" data-field="barcode" data-product-id="${product.id}">
+                        <code>${product.barcode || '-'}</code>
+                    </td>
+                    <td class="editable-cell" data-field="name" data-product-id="${product.id}">${product.name || 'Unnamed Product'}</td>
+                    <td class="editable-cell" data-field="mrp" data-product-id="${product.id}">₹${product.mrp || 0}</td>
+                    <td class="editable-cell" data-field="salePrice" data-product-id="${product.id}">₹${product.salePrice || 0}</td>
+                    <td class="editable-cell" data-field="useInFirstStart" data-product-id="${product.id}" data-type="boolean">
+                        <span class="badge ${product.useInFirstStart ? 'bg-success' : 'bg-secondary'}">
+                            ${product.useInFirstStart ? 'True' : 'False'}
+                        </span>
+                    </td>
+                    <td>
+                        ${product.imageUrl || product.photoPath ? 
+                            `<img src="${product.imageUrl || product.photoPath}" alt="${product.name}" style="width: 50px; height: 50px; object-fit: cover;" class="rounded img-thumbnail" title="${product.imageUrl || product.photoPath}">` : 
+                            '<span class="text-muted">No Image</span>'
+                        }
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editProduct('${product.id}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteProduct('${product.id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+    `).join('');
+            
+            tbody.innerHTML = html;
+            
+            // Make editable cells clickable
+            tbody.querySelectorAll('.editable-cell').forEach(cell => {
+                const field = cell.dataset.field;
+                const productId = cell.dataset.productId;
+                makeCellEditable(cell, field, productId);
+            });
+            
+            // Update bulk delete button state
+            updateBulkDeleteButton();
+        }
+
+        function showAddProductModal() {
+            editingProductId = null;
+            document.getElementById('productModalTitle').textContent = 'Add Product';
+            document.getElementById('product-form').reset();
+            document.getElementById('product-id').value = '';
+            
+            // Reset category dropdown to default option
+            const categorySelect = document.getElementById('product-category');
+            categorySelect.value = '';
+            
+            new bootstrap.Modal(document.getElementById('productModal')).show();
+        }
+
+        function editProduct(productId) {
+            const product = currentProducts.find(p => p.id === productId);
+            if (!product) return;
+            
+            editingProductId = productId;
+            document.getElementById('productModalTitle').textContent = 'Edit Product';
+            
+            // Fill form with product data
+            document.getElementById('product-id').value = product.id;
+            document.getElementById('product-name').value = product.name || '';
+            document.getElementById('product-brand').value = product.brand || '';
+            document.getElementById('product-category').value = product.category || '';
+            document.getElementById('product-barcode').value = product.barcode || '';
+            document.getElementById('product-mrp').value = product.mrp || '';
+            document.getElementById('product-sale-price').value = product.salePrice || '';
+            document.getElementById('product-stock').value = product.stock || 0;
+            document.getElementById('product-image-url').value = product.imageUrl || '';
+            document.getElementById('product-description').value = product.description || '';
+            
+            new bootstrap.Modal(document.getElementById('productModal')).show();
+        }
+
+        async function saveProduct() {
+            const form = document.getElementById('product-form');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+            
+            const productData = {
+                name: document.getElementById('product-name').value,
+                brand: document.getElementById('product-brand').value,
+                category: document.getElementById('product-category').value,
+                barcode: document.getElementById('product-barcode').value,
+                mrp: parseFloat(document.getElementById('product-mrp').value) || 0,
+                salePrice: parseFloat(document.getElementById('product-sale-price').value) || 0,
+                stock: parseInt(document.getElementById('product-stock').value) || 0,
+                imageUrl: document.getElementById('product-image-url').value,
+                description: document.getElementById('product-description').value
+            };
+            
+            try {
+                let response;
+                if (editingProductId) {
+                    response = await fetch(`/api/products/${editingProductId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(productData)
+                    });
+                } else {
+                    response = await fetch('/api/products', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(productData)
+                    });
+                }
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+                    loadProducts();
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving product:', error);
+                showAlert('Error saving product', 'danger');
+            }
+        }
+
+        async function deleteProduct(productId) {
+            if (!confirm('Are you sure you want to delete this product?')) {
+        return;
+    }
+    
+            try {
+                const response = await fetch(`/api/products/${productId}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    loadProducts();
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting product:', error);
+                showAlert('Error deleting product', 'danger');
+            }
+        }
+
+        function searchProducts() {
+            const searchTerm = document.getElementById('search-products').value.toLowerCase();
+            const filteredProducts = currentProducts.filter(product => 
+                (product.name && product.name.toLowerCase().includes(searchTerm)) ||
+                (product.brand && product.brand.toLowerCase().includes(searchTerm)) ||
+                (product.category && product.category.toLowerCase().includes(searchTerm))
+            );
+            renderProductsTable(filteredProducts);
+        }
+
+        // Bulk delete functionality
+        function updateBulkDeleteButton() {
+            const checkboxes = document.querySelectorAll('.product-checkbox:checked');
+            const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+            
+            if (checkboxes.length > 0) {
+                bulkDeleteBtn.disabled = false;
+                bulkDeleteBtn.textContent = `Delete Selected (${checkboxes.length})`;
+            } else {
+                bulkDeleteBtn.disabled = true;
+                bulkDeleteBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Delete Selected';
+            }
+            
+            // Update select all checkbox state
+            updateSelectAllCheckbox();
+        }
+        
+        function updateSelectAllCheckbox() {
+            const selectAllCheckbox = document.getElementById('select-all-products');
+            const productCheckboxes = document.querySelectorAll('.product-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.product-checkbox:checked');
+            
+            if (checkedCheckboxes.length === 0) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = false;
+            } else if (checkedCheckboxes.length === productCheckboxes.length) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = true;
+            } else {
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+        
+        function toggleSelectAll() {
+            const selectAllCheckbox = document.getElementById('select-all-products');
+            const productCheckboxes = document.querySelectorAll('.product-checkbox');
+            
+            productCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+            
+            updateBulkDeleteButton();
+        }
+        
+        async function bulkDeleteProducts() {
+            const selectedCheckboxes = document.querySelectorAll('.product-checkbox:checked');
+            
+            if (selectedCheckboxes.length === 0) {
+                showAlert('Please select products to delete', 'warning');
+                return;
+            }
+            
+            const productIds = Array.from(selectedCheckboxes).map(checkbox => checkbox.value);
+            
+            if (!confirm(`Are you sure you want to delete ${productIds.length} product(s)? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/products/bulk-delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                        product_ids: productIds
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    loadProducts(); // Refresh the products list
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting products:', error);
+                showAlert('Error deleting products', 'danger');
+            }
+        }
+
+        // Category bulk delete functions
+        function updateBulkDeleteCategoriesButton() {
+            const checkboxes = document.querySelectorAll('.category-checkbox:checked');
+            const bulkDeleteBtn = document.getElementById('bulk-delete-categories-btn');
+            
+            if (checkboxes.length > 0) {
+                bulkDeleteBtn.disabled = false;
+                bulkDeleteBtn.textContent = `Delete Selected (${checkboxes.length})`;
+            } else {
+                bulkDeleteBtn.disabled = true;
+                bulkDeleteBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Delete Selected';
+            }
+            
+            // Update select all checkbox state
+            updateSelectAllCategoriesCheckbox();
+        }
+        
+        function updateSelectAllCategoriesCheckbox() {
+            const selectAllCheckbox = document.getElementById('select-all-categories');
+            const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.category-checkbox:checked');
+            
+            if (checkedCheckboxes.length === 0) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = false;
+            } else if (checkedCheckboxes.length === categoryCheckboxes.length) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = true;
+            } else {
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+        
+        function toggleSelectAllCategories() {
+            const selectAllCheckbox = document.getElementById('select-all-categories');
+            const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
+            
+            categoryCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+            
+            updateBulkDeleteCategoriesButton();
+        }
+        
+        async function bulkDeleteCategories() {
+            const selectedCheckboxes = document.querySelectorAll('.category-checkbox:checked');
+            
+            if (selectedCheckboxes.length === 0) {
+                showAlert('Please select categories to delete', 'warning');
+        return;
+    }
+    
+            const categoryIds = Array.from(selectedCheckboxes).map(checkbox => checkbox.value);
+            
+            if (!confirm(`Are you sure you want to delete ${categoryIds.length} category(ies)? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/categories/bulk-delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        category_ids: categoryIds
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    loadCategories(); // Refresh the categories list
+            } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting categories:', error);
+                showAlert('Error deleting categories', 'danger');
+            }
+        }
+        
+        function updateSelectAllCategoriesCheckbox() {
+            const selectAllCheckbox = document.getElementById('select-all-categories');
+            const checkboxes = document.querySelectorAll('.category-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.category-checkbox:checked');
+            
+            if (checkedCheckboxes.length === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedCheckboxes.length === checkboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+        
+        function toggleSelectAllCategories() {
+            const selectAllCheckbox = document.getElementById('select-all-categories');
+            const checkboxes = document.querySelectorAll('.category-checkbox');
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+            
+            updateBulkDeleteCategoriesButton();
+        }
+        
+        async function bulkDeleteCategories() {
+            const checkboxes = document.querySelectorAll('.category-checkbox:checked');
+            const categoryIds = Array.from(checkboxes).map(checkbox => checkbox.value);
+            
+            if (categoryIds.length === 0) {
+                showAlert('Please select categories to delete', 'warning');
+                return;
+            }
+            
+            if (!confirm(`Are you sure you want to delete ${categoryIds.length} category(ies)? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/categories/bulk-delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ category_ids: categoryIds })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    loadCategories(); // Reload the categories table
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting categories:', error);
+                showAlert('Error deleting categories', 'danger');
+            }
+        }
+
+        // Category management functions
+        async function loadCategories() {
+            try {
+                const response = await fetch('/api/categories');
+                const data = await response.json();
+
+                // Handle both array response and object with categories property
+                currentCategories = Array.isArray(data) ? data : (data.categories || []);
+                renderCategoriesTable(currentCategories);
+                
+                // Populate category dropdown
+                populateCategoryDropdown();
+            } catch (error) {
+                console.error('Error loading categories:', error);
+                showAlert('Error loading categories', 'danger');
+            }
+        }
+
+        function renderCategoriesTable(categories) {
+            const tbody = document.getElementById('categories-tbody');
+            
+            if (categories.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No categories found</td></tr>';
+                updateBulkDeleteCategoriesButton();
+                return;
+            }
+            
+            const html = categories.map(category => `
+                <tr>
+                    <td>
+                        <input type="checkbox" class="form-check-input category-checkbox" value="${category.id}" onchange="updateBulkDeleteCategoriesButton()">
+                    </td>
+                    <td>${category.name || 'Unnamed Category'}</td>
+                    <td>${category.description || '-'}</td>
+                    <td>
+                        <span class="badge ${category.isActive ? 'bg-success' : 'bg-secondary'}">
+                            ${category.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editCategory('${category.id}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteCategory('${category.id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+            
+            tbody.innerHTML = html;
+            updateBulkDeleteCategoriesButton();
+        }
+
+        function showAddCategoryModal() {
+            editingCategoryId = null;
+            document.getElementById('categoryModalTitle').textContent = 'Add Category';
+            document.getElementById('category-form').reset();
+            document.getElementById('category-id').value = '';
+            new bootstrap.Modal(document.getElementById('categoryModal')).show();
+        }
+
+        function editCategory(categoryId) {
+            const category = currentCategories.find(c => c.id === categoryId);
+            if (!category) return;
+            
+            editingCategoryId = categoryId;
+            document.getElementById('categoryModalTitle').textContent = 'Edit Category';
+            
+            // Fill form with category data
+            document.getElementById('category-id').value = category.id;
+            document.getElementById('category-name').value = category.name || '';
+            document.getElementById('category-description').value = category.description || '';
+            
+            new bootstrap.Modal(document.getElementById('categoryModal')).show();
+        }
+
+        async function saveCategory() {
+            const form = document.getElementById('category-form');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+            
+            const categoryData = {
+                name: document.getElementById('category-name').value,
+                description: document.getElementById('category-description').value
+            };
+            
+            try {
+                let response;
+                if (editingCategoryId) {
+                    response = await fetch(`/api/categories/${editingCategoryId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(categoryData)
+                    });
+                } else {
+                    response = await fetch('/api/categories', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+                        body: JSON.stringify(categoryData)
+                    });
+                }
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('categoryModal')).hide();
+                    loadCategories();
+            } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving category:', error);
+                showAlert('Error saving category', 'danger');
+            }
+        }
+
+        async function deleteCategory(categoryId) {
+            if (!confirm('Are you sure you want to delete this category?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/categories/${categoryId}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    loadCategories();
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting category:', error);
+                showAlert('Error deleting category', 'danger');
+            }
+        }
+
+        // Debug functions
+        async function debugFirebase() {
+            try {
+                const response = await fetch('/api/debug/firebase');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert(`Firebase Status: ${data.status}<br>
+                        Collections: ${data.collections.join(', ')}<br>
+                        Products: ${data.products_count}<br>
+                        Categories: ${data.categories_count}`, 'success');
+                } else {
+                    showAlert(`Firebase Error: ${data.error}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Debug Firebase error:', error);
+                showAlert('Error testing Firebase connection', 'danger');
+            }
+        }
+
+        async function createSampleProduct() {
+            try {
+                const response = await fetch('/api/test/create-sample-product');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert(data.message, 'success');
+                    loadProducts(); // Refresh the products list
+                } else {
+                    showAlert(data.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Create sample product error:', error);
+                showAlert('Error creating sample product', 'danger');
+            }
+        }
+
+        // Data Getter Functions
+        function clearDataGetterResults() {
+            document.getElementById('product-data-result').style.display = 'none';
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('loading-spinner').style.display = 'none';
+            document.getElementById('add-to-unfound-btn').disabled = true;
+            document.getElementById('barcode-input').value = '';
+        }
+
+        async function fetchProductData() {
+            const barcode = document.getElementById('barcode-input').value.trim();
+            
+            if (!barcode) {
+                showError('Please enter a barcode number');
+                return;
+            }
+
+            // Show loading spinner
+            document.getElementById('loading-spinner').style.display = 'block';
+            document.getElementById('product-data-result').style.display = 'none';
+            document.getElementById('error-message').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/fetch-product-data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ barcode: barcode })
+                });
+
+                const data = await response.json();
+                
+                // Hide loading spinner
+                document.getElementById('loading-spinner').style.display = 'none';
+
+                if (response.ok && data.success) {
+                    displayProductData(data.product);
+                    document.getElementById('add-to-unfound-btn').disabled = false;
+                } else if (data.status === 'spa_detected') {
+                    showError(`⚠️ ${data.message}<br><br><strong>Suggestion:</strong> ${data.suggestion}<br><br>This website uses JavaScript to load product data, which cannot be scraped with basic web scraping.`);
+                } else {
+                    showError(data.message || data.error || 'Failed to fetch product data');
+                    document.getElementById('add-to-unfound-btn').disabled = false;
+                }
+            } catch (error) {
+                document.getElementById('loading-spinner').style.display = 'none';
+                showError('Network error: ' + error.message);
+                document.getElementById('add-to-unfound-btn').disabled = false;
+            }
+        }
+
+        function displayProductData(product) {
+            const productDetails = document.getElementById('product-details');
+            
+            let html = `
+                <div class="row">
+                    <div class="col-12">
+                        <h6><i class="fas fa-table me-2"></i>Product Information:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th style="width: 20%;"><i class="fas fa-barcode me-1"></i>Barcode</th>
+                                        <th style="width: 35%;"><i class="fas fa-tag me-1"></i>Name</th>
+                                        <th style="width: 15%;"><i class="fas fa-rupee-sign me-1"></i>MRP</th>
+                                        <th style="width: 30%;"><i class="fas fa-image me-1"></i>Image URL</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><code>${product.barcode || 'N/A'}</code></td>
+                                        <td>${product.name || 'N/A'}</td>
+                                        <td class="text-end"><strong>${product.price || 'N/A'}</strong></td>
+                                        <td>
+                                            ${product.image ? 
+                                                `<a href="${product.image}" target="_blank" class="text-decoration-none">
+                                                    <i class="fas fa-external-link-alt me-1"></i>View Image
+                                                </a>` : 
+                                                '<span class="text-muted">No Image</span>'
+                                            }
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Add image preview if available
+            if (product.image) {
+                html += `
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <h6><i class="fas fa-eye me-2"></i>Image Preview:</h6>
+                            <div class="text-center">
+                                <img src="${product.image}" alt="Product Image" class="img-thumbnail" style="max-width: 300px; max-height: 300px; object-fit: contain;">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            productDetails.innerHTML = html;
+            document.getElementById('product-data-result').style.display = 'block';
+        }
+
+        function showError(message) {
+            document.getElementById('error-text').textContent = message;
+            document.getElementById('error-message').style.display = 'block';
+        }
+
+        async function addToUnfoundBarcodes() {
+            const barcode = document.getElementById('barcode-input').value.trim();
+            
+            if (!barcode) {
+                showError('No barcode to add');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/unfound-barcodes', {
+            method: 'POST',
+            headers: {
+                        'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                        barcode: barcode,
+                        timestamp: new Date().toISOString(),
+                        deviceId: 'DATA_GETTER',
+                        location: 'Smart Consumer API',
+                        status: 'not_found'
+                    })
+                });
+
+                if (response.ok) {
+                    showAlert('Barcode added to unfound barcodes successfully!', 'success');
+                    clearDataGetterResults();
+            } else {
+                    const data = await response.json();
+                    showError('Failed to add barcode: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
+        }
+
+        // Utility functions
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alert-container');
+            const alertId = 'alert-' + Date.now();
+            
+            const alertHtml = `
+                <div id="${alertId}" class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            alertContainer.insertAdjacentHTML('beforeend', alertHtml);
+            
+            setTimeout(() => {
+                const alert = document.getElementById(alertId);
+                if (alert) {
+                    alert.remove();
+                }
+            }, 5000);
+        }
+
+        // Unfound Barcodes Management Functions
+        async function loadUnfoundBarcodes() {
+            try {
+                const response = await fetch('/api/unfound-barcodes');
+                const data = await response.json();
+                
+                if (Array.isArray(data)) {
+                    currentUnfoundBarcodes = data;
+                } else if (data.unfound_barcodes) {
+                    currentUnfoundBarcodes = data.unfound_barcodes;
+                } else {
+                    currentUnfoundBarcodes = [];
+                }
+                
+                renderUnfoundBarcodesTable(currentUnfoundBarcodes);
+            } catch (error) {
+                console.error('Error loading unfound barcodes:', error);
+                showAlert('Error loading unfound barcodes', 'danger');
+            }
+        }
+
+        function renderUnfoundBarcodesTable(unfoundBarcodes) {
+            const tbody = document.getElementById('unfound-barcodes-tbody');
+
+            if (!unfoundBarcodes || unfoundBarcodes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No unfound barcodes found</td></tr>';
+                updateBulkDeleteBarcodesButton();
+                return;
+            }
+
+            const html = unfoundBarcodes.map(barcode => {
+                // Handle different data structures - some documents might be empty or have different fields
+                const barcodeValue = barcode.barcode || barcode.id || 'Unknown';
+                const timestamp = barcode.timestamp ? new Date(barcode.timestamp).toLocaleString() : 'N/A';
+                const deviceId = barcode.deviceId || barcode.device_id || 'N/A';
+                const location = barcode.location || 'N/A';
+                const status = barcode.status || 'N/A';
+                
+                return `
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="form-check-input barcode-checkbox" value="${barcode.id}" onchange="updateBulkDeleteBarcodesButton()">
+                        </td>
+                        <td><code>${barcodeValue}</code></td>
+                        <td>${timestamp}</td>
+                        <td>${deviceId}</td>
+                        <td>${location}</td>
+                        <td>
+                            <span class="badge bg-secondary me-2">${status}</span>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteUnfoundBarcode('${barcode.id}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            tbody.innerHTML = html;
+            updateBulkDeleteBarcodesButton();
+        }
+
+        async function deleteUnfoundBarcode(barcodeId) {
+            if (!confirm('Are you sure you want to delete this unfound barcode?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/unfound-barcodes/${barcodeId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    loadUnfoundBarcodes();
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting unfound barcode:', error);
+                showAlert('Error deleting unfound barcode', 'danger');
+            }
+        }
+
+        function updateBulkDeleteBarcodesButton() {
+            const checkboxes = document.querySelectorAll('.barcode-checkbox:checked');
+            const bulkDeleteBtn = document.getElementById('bulk-delete-barcodes-btn');
+
+            if (checkboxes.length > 0) {
+                bulkDeleteBtn.disabled = false;
+                bulkDeleteBtn.textContent = `Delete Selected (${checkboxes.length})`;
+            } else {
+                bulkDeleteBtn.disabled = true;
+                bulkDeleteBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Delete Selected';
+            }
+
+            updateSelectAllBarcodesCheckbox();
+        }
+
+        function updateSelectAllBarcodesCheckbox() {
+            const selectAllCheckbox = document.getElementById('select-all-barcodes');
+            const barcodeCheckboxes = document.querySelectorAll('.barcode-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.barcode-checkbox:checked');
+
+            if (checkedCheckboxes.length === 0) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = false;
+            } else if (checkedCheckboxes.length === barcodeCheckboxes.length) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = true;
+            } else {
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+
+        function toggleSelectAllBarcodes() {
+            const selectAllCheckbox = document.getElementById('select-all-barcodes');
+            const barcodeCheckboxes = document.querySelectorAll('.barcode-checkbox');
+
+            barcodeCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+
+            updateBulkDeleteBarcodesButton();
+        }
+
+        async function bulkDeleteUnfoundBarcodes() {
+            const selectedCheckboxes = document.querySelectorAll('.barcode-checkbox:checked');
+
+            if (selectedCheckboxes.length === 0) {
+                showAlert('Please select barcodes to delete', 'warning');
+                return;
+            }
+
+            const barcodeIds = Array.from(selectedCheckboxes).map(checkbox => checkbox.value);
+
+            if (!confirm(`Are you sure you want to delete ${barcodeIds.length} unfound barcode(s)? This action cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/unfound-barcodes/bulk-delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        barcode_ids: barcodeIds
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    loadUnfoundBarcodes();
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting unfound barcodes:', error);
+                showAlert('Error deleting unfound barcodes', 'danger');
+            }
+        }
+
+        function exportUnfoundBarcodes() {
+            try {
+                const link = document.createElement('a');
+                link.href = '/api/unfound-barcodes/export';
+                link.download = 'unfound_barcodes_export.xlsx';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showAlert('Unfound barcodes exported successfully!', 'success');
+            } catch (error) {
+                console.error('Error exporting unfound barcodes:', error);
+                showAlert('Error exporting unfound barcodes', 'danger');
+            }
+        }
+
+        function searchUnfoundBarcodes() {
+            const searchTerm = document.getElementById('search-barcodes').value.toLowerCase();
+            const filteredBarcodes = currentUnfoundBarcodes.filter(barcode => {
+                const barcodeValue = (barcode.barcode || barcode.id || '').toString().toLowerCase();
+                const deviceId = (barcode.deviceId || barcode.device_id || '').toString().toLowerCase();
+                const location = (barcode.location || '').toString().toLowerCase();
+                
+                return barcodeValue.includes(searchTerm) ||
+                       deviceId.includes(searchTerm) ||
+                       location.includes(searchTerm);
+            });
+            renderUnfoundBarcodesTable(filteredBarcodes);
+        }
+
+        async function addSampleUnfoundBarcodes() {
+            const sampleData = [
+                {
+                    barcode: '1234567890123',
+                    timestamp: new Date().toISOString(),
+                    deviceId: 'POS_001',
+                    location: 'Store A',
+                    status: 'failed'
+                },
+                {
+                    barcode: '9876543210987',
+                    timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+                    deviceId: 'POS_002',
+                    location: 'Store B',
+                    status: 'not_found'
+                },
+                {
+                    barcode: '5555555555555',
+                    timestamp: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
+                    deviceId: 'POS_001',
+                    location: 'Store A',
+                    status: 'invalid'
+                }
+            ];
+
+            try {
+                for (const barcodeData of sampleData) {
+                    const response = await fetch('/api/unfound-barcodes', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(barcodeData)
+                    });
+
+                    if (!response.ok) {
+                        console.error('Failed to add sample barcode:', barcodeData.barcode);
+                    }
+                }
+
+                showAlert('Sample unfound barcodes added successfully!', 'success');
+                loadUnfoundBarcodes(); // Refresh the list
+            } catch (error) {
+                console.error('Error adding sample unfound barcodes:', error);
+                showAlert('Error adding sample data', 'danger');
+            }
+        }
+
+        // Excel Import/Export Functions
+        function exportProducts() {
+            try {
+                const link = document.createElement('a');
+                link.href = '/api/products/export';
+                link.download = 'products_export.xlsx';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showAlert('Products exported successfully!', 'success');
+            } catch (error) {
+                console.error('Error exporting products:', error);
+                showAlert('Error exporting products', 'danger');
+            }
+        }
+
+        function exportCategories() {
+            try {
+                const link = document.createElement('a');
+                link.href = '/api/categories/export';
+                link.download = 'categories_export.xlsx';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showAlert('Categories exported successfully!', 'success');
+            } catch (error) {
+                console.error('Error exporting categories:', error);
+                showAlert('Error exporting categories', 'danger');
+            }
+        }
+
+        let currentImportType = '';
+
+        function showImportModal(type) {
+            currentImportType = type;
+            const modal = new bootstrap.Modal(document.getElementById('importModal'));
+            const title = document.getElementById('importModalTitle');
+            const requiredColumns = document.getElementById('requiredColumns');
+            
+            if (type === 'products') {
+                title.textContent = 'Import Products from Excel';
+                requiredColumns.innerHTML = `
+                    <ul class="mb-0">
+                        <li><strong>name</strong> - Product name (required)</li>
+                        <li><strong>category</strong> - Product category (required)</li>
+                        <li><strong>mrp</strong> - Maximum Retail Price (required)</li>
+                        <li><strong>price</strong> - Selling Price (required)</li>
+                        <li><strong>useInFirstStart</strong> - Show on first start (optional, true/false)</li>
+                        <li><strong>imageUrl</strong> - Image URL (optional)</li>
+                        <li><strong>stockQuantity</strong> - Stock quantity (optional)</li>
+                    </ul>
+                `;
+            } else if (type === 'categories') {
+                title.textContent = 'Import Categories from Excel';
+                requiredColumns.innerHTML = `
+                    <ul class="mb-0">
+                        <li><strong>name</strong> - Category name (required)</li>
+                        <li><strong>description</strong> - Category description (optional)</li>
+                        <li><strong>isActive</strong> - Active status (optional, true/false)</li>
+                    </ul>
+                `;
+            }
+            
+            modal.show();
+        }
+
+        async function importData() {
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showAlert('Please select a file to import', 'warning');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const endpoint = currentImportType === 'products' ? '/api/products/import' : '/api/categories/import';
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert(result.message, 'success');
+                    
+                    // Show errors if any
+                    if (result.errors && result.errors.length > 0) {
+                        const errorMessage = result.errors.join('<br>');
+                        showAlert(`Import completed with errors:<br>${errorMessage}`, 'warning');
+                    }
+                    
+                    // Close modal and refresh data
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
+                    modal.hide();
+                    
+                    // Refresh the appropriate table
+                    if (currentImportType === 'products') {
+                        loadProducts();
+                    } else {
+                        loadCategories();
+                    }
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error importing data:', error);
+                showAlert('Error importing data', 'danger');
+            }
+        }
+
+        // Background Processor Functions
+        async function loadBackgroundProcessorStatus() {
+            try {
+                const response = await fetch('/api/background-processor/status');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    updateProcessorStatusDisplay(data.data);
+                } else {
+                    showAlert('Error loading processor status', 'danger');
+                }
+            } catch (error) {
+                console.error('Error loading processor status:', error);
+                showAlert('Error loading processor status', 'danger');
+            }
+        }
+
+        function updateProcessorStatusDisplay(status) {
+            const statusDiv = document.getElementById('processor-status');
+            
+            let statusHtml = '';
+            
+            if (status.running) {
+                statusHtml = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-spinner fa-spin me-2"></i>
+                        <strong>Running</strong><br>
+                        <small>Processing: ${status.current_barcode || 'None'}</small>
+                    </div>
+                `;
+            } else {
+                statusHtml = `
+                    <div class="alert alert-secondary">
+                        <i class="fas fa-pause me-2"></i>
+                        <strong>Stopped</strong>
+                    </div>
+                `;
+            }
+            
+            if (status.last_run) {
+                const lastRun = new Date(status.last_run).toLocaleString();
+                statusHtml += `
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <strong>Last Run:</strong> ${lastRun}<br>
+                            <strong>Processed:</strong> ${status.processed_count}<br>
+                            <strong>Success:</strong> ${status.success_count}<br>
+                            <strong>Errors:</strong> ${status.error_count}
+                        </small>
+                    </div>
+                `;
+            }
+            
+            statusDiv.innerHTML = statusHtml;
+        }
+
+        async function startBackgroundProcessor() {
+            try {
+                const response = await fetch('/api/background-processor/start', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAlert(data.message, 'success');
+                    loadBackgroundProcessorStatus();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error starting processor:', error);
+                showAlert('Error starting background processor', 'danger');
+            }
+        }
+
+        async function stopBackgroundProcessor() {
+            try {
+                const response = await fetch('/api/background-processor/stop', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAlert(data.message, 'success');
+                    loadBackgroundProcessorStatus();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error stopping processor:', error);
+                showAlert('Error stopping background processor', 'danger');
+            }
+        }
+
+        async function runBackgroundProcessorNow() {
+            try {
+                const response = await fetch('/api/background-processor/run-now', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAlert(data.message, 'success');
+                    loadBackgroundProcessorStatus();
+                    
+                    // Refresh status every 5 seconds while running
+                    const statusInterval = setInterval(async () => {
+                        await loadBackgroundProcessorStatus();
+                        const statusResponse = await fetch('/api/background-processor/status');
+                        const statusData = await statusResponse.json();
+                        if (!statusData.data.running) {
+                            clearInterval(statusInterval);
+                        }
+                    }, 5000);
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error running processor:', error);
+                showAlert('Error running background processor', 'danger');
+            }
+        }
+
+        // Auto-refresh processor status every 30 seconds
+        setInterval(() => {
+            const processorSection = document.getElementById('background-processor-section');
+            if (processorSection.style.display !== 'none') {
+                loadBackgroundProcessorStatus();
+                loadProcessedBarcodes();
+            }
+        }, 30000);
+
+        // Processed Barcodes Functions
+        let processedBarcodes = [];
+
+        async function loadProcessedBarcodes() {
+            try {
+                const response = await fetch('/api/background-processor/processed-barcodes');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    processedBarcodes = data.data || [];
+                    renderProcessedBarcodesTable(processedBarcodes);
+                } else {
+                    console.error('Error loading processed barcodes:', data.error);
+                }
+            } catch (error) {
+                console.error('Error loading processed barcodes:', error);
+            }
+        }
+
+        function renderProcessedBarcodesTable(barcodes) {
+            const tbody = document.getElementById('processed-barcodes-tbody');
+            
+            if (!barcodes || barcodes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No barcodes processed yet</td></tr>';
+                return;
+            }
+            
+            // Sort by processed time (most recent first)
+            const sortedBarcodes = barcodes.sort((a, b) => new Date(b.processedAt) - new Date(a.processedAt));
+            
+            const html = sortedBarcodes.slice(0, 20).map(barcode => { // Show only last 20
+                const processedAt = new Date(barcode.processedAt).toLocaleString();
+                const statusBadge = barcode.success ? 
+                    '<span class="badge bg-success">Success</span>' : 
+                    '<span class="badge bg-danger">Failed</span>';
+                
+                const resultText = barcode.success ? 
+                    (barcode.productName ? `Added: ${barcode.productName}` : 'Product Added') :
+                    (barcode.error || 'Not Found');
+                
+                return `
+                    <tr>
+                        <td><code>${barcode.barcode}</code></td>
+                        <td>${barcode.productName || '-'}</td>
+                        <td>${statusBadge}</td>
+                        <td><small>${processedAt}</small></td>
+                        <td><small>${resultText}</small></td>
+                    </tr>
+                `;
+            }).join('');
+            
+            tbody.innerHTML = html;
+        }
+
+        async function clearProcessedBarcodes() {
+            if (!confirm('Are you sure you want to clear the processed barcodes history? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/background-processor/clear-processed-history', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAlert(data.message, 'success');
+                    loadProcessedBarcodes();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error clearing processed barcodes:', error);
+                showAlert('Error clearing processed barcodes history', 'danger');
+            }
+        }
+    </script>
+</body>
+</html>
