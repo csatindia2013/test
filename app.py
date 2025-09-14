@@ -2314,15 +2314,25 @@ def import_barcodes_with_scraping():
                 # Check if barcode already exists in barcode_cache (successfully scraped)
                 existing_doc = db.collection('barcode_cache').document(barcode).get()
                 if existing_doc.exists:
-                    print(f"Barcode {barcode} already exists in barcode_cache, skipping")
+                    print(f"Barcode {barcode} already exists in barcode_cache (successfully scraped), skipping")
                     skipped_count += 1
                     continue
                 
-                # Check if barcode already exists in unfound_barcodes
+                # Check if barcode already exists in unfound_barcodes and update it instead of skipping
                 unfound_query = db.collection('unfound_barcodes').where('barcode', '==', barcode).limit(1).get()
                 if unfound_query:
-                    print(f"Barcode {barcode} already exists in unfound list, skipping")
-                    skipped_count += 1
+                    # Update existing unfound barcode to reset retry count and timestamp
+                    unfound_doc = unfound_query[0]
+                    unfound_doc.reference.update({
+                        'source': 'excel',
+                        'createdAt': datetime.now().isoformat(),
+                        'lastRetry': None,
+                        'retryCount': 0,
+                        'status': 'pending'
+                    })
+                    print(f"🔄 Updated existing unfound barcode {barcode} (reset retry count)")
+                    added_to_unfound_count += 1
+                    processed_count += 1
                     continue
                 
                 # Add to unfound_barcodes with source label
