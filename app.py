@@ -90,7 +90,7 @@ def create_app(config_name=None):
     
     # Initialize rate limiting
     limiter = Limiter(
-        app,
+        app=app,
         key_func=get_remote_address,
         default_limits=[app.config['RATELIMIT_DEFAULT']]
     )
@@ -113,38 +113,43 @@ def init_firebase(app):
     try:
         app.logger.info("Initializing Firebase...")
         
-        # Try to load service account file or environment variables
+        # Check if Firebase is already initialized
         try:
-            app.logger.info("Loading service account file...")
-            cred = credentials.Certificate('firebase-service-account.json')
-            firebase_admin.initialize_app(cred)
-            app.logger.info("Firebase app initialized with service account")
-        except Exception as e:
-            app.logger.warning(f"Service account file failed: {e}")
+            firebase_admin.get_app()
+            app.logger.info("Firebase app already initialized")
+        except ValueError:
+            # Firebase not initialized, proceed with initialization
             try:
-                firebase_config = {
-                    "type": "service_account",
-                    "project_id": app.config['FIREBASE_PROJECT_ID'],
-                    "private_key_id": app.config['FIREBASE_PRIVATE_KEY_ID'],
-                    "private_key": app.config['FIREBASE_PRIVATE_KEY'],
-                    "client_email": app.config['FIREBASE_CLIENT_EMAIL'],
-                    "client_id": app.config['FIREBASE_CLIENT_ID'],
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                    "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{app.config['FIREBASE_CLIENT_EMAIL']}"
-                }
-                if all(firebase_config.values()):
-                    cred = credentials.Certificate(firebase_config)
-                    firebase_admin.initialize_app(cred)
-                    app.logger.info("Firebase app initialized with environment variables")
-                else:
-                    raise Exception("Missing Firebase environment variables")
-            except Exception as e2:
-                app.logger.warning(f"Environment variables failed: {e2}")
-                app.logger.info("Trying Application Default Credentials...")
-                firebase_admin.initialize_app()
-                app.logger.info("Firebase app initialized with default credentials")
+                app.logger.info("Loading service account file...")
+                cred = credentials.Certificate('firebase-service-account.json')
+                firebase_admin.initialize_app(cred)
+                app.logger.info("Firebase app initialized with service account")
+            except Exception as e:
+                app.logger.warning(f"Service account file failed: {e}")
+                try:
+                    firebase_config = {
+                        "type": "service_account",
+                        "project_id": app.config['FIREBASE_PROJECT_ID'],
+                        "private_key_id": app.config['FIREBASE_PRIVATE_KEY_ID'],
+                        "private_key": app.config['FIREBASE_PRIVATE_KEY'],
+                        "client_email": app.config['FIREBASE_CLIENT_EMAIL'],
+                        "client_id": app.config['FIREBASE_CLIENT_ID'],
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                        "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{app.config['FIREBASE_CLIENT_EMAIL']}"
+                    }
+                    if all(firebase_config.values()):
+                        cred = credentials.Certificate(firebase_config)
+                        firebase_admin.initialize_app(cred)
+                        app.logger.info("Firebase app initialized with environment variables")
+                    else:
+                        raise Exception("Missing Firebase environment variables")
+                except Exception as e2:
+                    app.logger.warning(f"Environment variables failed: {e2}")
+                    app.logger.info("Trying Application Default Credentials...")
+                    firebase_admin.initialize_app()
+                    app.logger.info("Firebase app initialized with default credentials")
         
         db = firestore.client()
         firebase_status = "connected"
@@ -615,77 +620,7 @@ class CategoryService:
         except Exception as e:
             return {"error": str(e)}
 
-# Routes
-# Authentication Routes
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        
-        # Load credentials from environment variables with secure defaults
-        admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
-        admin_password_hash = os.environ.get('ADMIN_PASSWORD_HASH', generate_password_hash('admin123'))
-        user1_username = os.environ.get('USER1_USERNAME', 'user1')
-        user1_password_hash = os.environ.get('USER1_PASSWORD_HASH', generate_password_hash('user123'))
-        
-        users = {
-            admin_username: admin_password_hash,
-            user1_username: user1_password_hash
-        }
-        
-        if username in users and check_password_hash(users[username], password):
-            user = User(username, username)
-            login_user(user)
-            return jsonify({
-                'status': 'success',
-                'message': 'Login successful',
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'role': user.role
-                }
-            })
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid username or password'
-            }), 401
-    
-    return render_template('login.html')
-
-@app.route('/logout', methods=['POST'])
-@login_required
-def logout():
-    logout_user()
-    return jsonify({
-        'status': 'success',
-        'message': 'Logged out successfully'
-    })
-
-@app.route('/api/auth/status', methods=['GET'])
-def auth_status():
-    if current_user.is_authenticated:
-        return jsonify({
-            'status': 'success',
-            'authenticated': True,
-            'user': {
-                'id': current_user.id,
-                'username': current_user.username,
-                'role': current_user.role
-            }
-        })
-    else:
-        return jsonify({
-            'status': 'success',
-            'authenticated': False
-        })
-
-@app.route('/')
-@login_required
-def index():
-    return render_template('index.html')
+# Routes are now defined in the register_routes function
 
 # Product Routes
 @app.route('/api/products', methods=['GET'])
