@@ -2394,6 +2394,35 @@ def import_barcodes_with_scraping():
         print(f"Import error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/clear-barcode-cache', methods=['POST'])
+@login_required
+def clear_barcode_cache():
+    """Clear all barcodes from barcode_cache collection"""
+    try:
+        if not db:
+            return jsonify({'error': 'Database not available'}), 500
+        
+        # Get all documents from barcode_cache collection
+        barcode_cache_ref = db.collection('barcode_cache')
+        docs = barcode_cache_ref.stream()
+        
+        cleared_count = 0
+        for doc in docs:
+            doc.reference.delete()
+            cleared_count += 1
+        
+        print(f"Cleared {cleared_count} barcodes from cache")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully cleared {cleared_count} barcodes from cache',
+            'cleared_count': cleared_count
+        })
+        
+    except Exception as e:
+        print(f"Error clearing barcode cache: {e}")
+        return jsonify({'error': str(e)}), 500
+
 def scrape_product_data_for_import(barcode, url):
     """Scrape product data from Smart Consumer website for import"""
     from selenium import webdriver

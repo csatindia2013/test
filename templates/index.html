@@ -537,6 +537,9 @@
                     <button class="btn btn-primary me-2" onclick="showImportModal()">
                         <i class="fas fa-upload"></i> Import Excel
                     </button>
+                    <button class="btn btn-warning me-2" onclick="clearBarcodeCache()">
+                        <i class="fas fa-trash-alt"></i> Clear Cache
+                    </button>
                     <div class="input-group">
                         <input type="text" class="form-control" id="search-barcodes" placeholder="Search barcodes...">
                         <button class="btn btn-outline-secondary" onclick="searchUnfoundBarcodes()">
@@ -2325,6 +2328,30 @@ document.addEventListener('DOMContentLoaded', function() {
                 setTimeout(() => {
                     indicator.style.display = 'none';
                 }, 3000);
+            }
+        }
+
+        // Clear barcode cache function
+        async function clearBarcodeCache() {
+            if (!confirm('Are you sure you want to clear the barcode cache? This will allow re-importing all previously scraped barcodes. This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/clear-barcode-cache', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert(`Successfully cleared ${result.cleared_count} barcodes from cache! You can now re-import them.`, 'success');
+                } else {
+                    showAlert(result.error || 'Failed to clear barcode cache', 'danger');
+                }
+            } catch (error) {
+                console.error('Error clearing barcode cache:', error);
+                showAlert('Error clearing barcode cache: ' + error.message, 'danger');
             }
         }
 
