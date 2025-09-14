@@ -1878,10 +1878,11 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
                         barcode: barcode,
+                        source: 'manual',
                         timestamp: new Date().toISOString(),
                         deviceId: 'DATA_GETTER',
                         location: 'Smart Consumer API',
-                        status: 'not_found'
+                        status: 'pending'
                     })
                 });
 
@@ -1952,7 +1953,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const html = unfoundBarcodes.map(barcode => {
                 // Handle different data structures - some documents might be empty or have different fields
                 const barcodeValue = barcode.barcode || barcode.id || 'Unknown';
-                const timestamp = barcode.timestamp ? new Date(barcode.timestamp).toLocaleString() : 'N/A';
+                const timestamp = barcode.createdAt ? new Date(barcode.createdAt).toLocaleString() : 
+                                 barcode.timestamp ? new Date(barcode.timestamp).toLocaleString() : 'N/A';
                 const deviceId = barcode.deviceId || barcode.device_id || 'N/A';
                 const location = barcode.location || 'N/A';
                 const status = barcode.status || 'N/A';
@@ -1960,7 +1962,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Determine source display
                 let sourceDisplay = 'Firebase';
                 let sourceClass = 'bg-primary';
-                if (barcode.source === 'import') {
+                if (barcode.source === 'excel') {
+                    sourceDisplay = 'Excel';
+                    sourceClass = 'bg-success';
+                } else if (barcode.source === 'import') {
                     sourceDisplay = 'Imported';
                     sourceClass = 'bg-success';
                 } else if (barcode.source === 'manual') {
@@ -2799,7 +2804,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.getElementById('import-results').innerHTML = `
                         <div class="small">
                             <div><strong>Processed:</strong> ${result.processed_count} barcodes</div>
-                            <div><strong>Added to Unfound:</strong> ${result.scraped_count} barcodes</div>
+                            <div><strong>Added to Unfound:</strong> ${result.added_to_unfound_count} barcodes</div>
                             <div><strong>Skipped:</strong> ${result.skipped_count} existing</div>
                             ${result.errors && result.errors.length > 0 ? 
                                 `<div class="text-warning"><strong>Errors:</strong> ${result.errors.length}</div>` : 
@@ -2808,7 +2813,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     `;
                     
-                    showAlert(`Successfully processed ${result.processed_count} barcodes! ${result.scraped_count} added to unfound list.`, 'success');
+                    showAlert(`Successfully processed ${result.processed_count} barcodes! ${result.added_to_unfound_count} added to unfound list.`, 'success');
                     
                     // Clear file input
                     fileInput.value = '';
