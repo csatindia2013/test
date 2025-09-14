@@ -194,7 +194,14 @@
                             <i class="fas fa-database me-2"></i>
                             Firebase Manager
                         </h4>
-        </div>
+                        <div class="text-white-50 small" id="user-info">
+                            <i class="fas fa-user me-1"></i>
+                            <span id="current-user">Loading...</span>
+                        </div>
+                        <button class="btn btn-outline-light btn-sm mt-2" onclick="logout()">
+                            <i class="fas fa-sign-out-alt me-1"></i>Logout
+                        </button>
+                    </div>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link active" href="#" onclick="showSection('products')">
@@ -760,6 +767,61 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+        // Authentication Functions
+        let currentUser = null;
+
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth/status');
+                const data = await response.json();
+                
+                if (data.authenticated) {
+                    currentUser = data.user;
+                    document.getElementById('current-user').textContent = currentUser.username;
+                    document.getElementById('user-info').innerHTML = `
+                        <i class="fas fa-user me-1"></i>
+                        <span>${currentUser.username}</span>
+                        <span class="badge bg-success ms-1">${currentUser.role}</span>
+                    `;
+                } else {
+                    // Redirect to login if not authenticated
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                window.location.href = '/login';
+            }
+        }
+
+        async function logout() {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showAlert('Logged out successfully', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 1000);
+                } else {
+                    showAlert('Logout failed', 'danger');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                showAlert('Logout failed', 'danger');
+            }
+        }
+
+        // Check authentication status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+        });
+
         // Inline editing functionality
         let editingCell = null;
         let originalValue = null;

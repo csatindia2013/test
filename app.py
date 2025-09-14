@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session
 from flask_cors import CORS
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime, timezone
 import json
 import firebase_admin
@@ -25,7 +26,31 @@ import schedule
 
 # Initialize Flask app
 app = Flask(__name__)
-app.secret_key = 'pos-dashboard-secret-key'
+app.secret_key = os.environ.get('SECRET_KEY', 'pos-dashboard-secret-key')
+
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access this page.'
+login_manager.login_message_category = 'info'
+
+# User class for Flask-Login
+class User(UserMixin):
+    def __init__(self, id, username, role='admin'):
+        self.id = id
+        self.username = username
+        self.role = role
+
+@login_manager.user_loader
+def load_user(user_id):
+    # Simple in-memory user storage (in production, use a database)
+    users = {
+        'admin': User('admin', 'admin', 'admin'),
+        'user1': User('user1', 'user1', 'user')
+    }
+    return users.get(user_id)
+
 CORS(app)
 
 # Initialize Firebase
@@ -349,12 +374,75 @@ class CategoryService:
             return {"error": str(e)}
 
 # Routes
+# Authentication Routes
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        # Simple authentication (in production, use proper password hashing)
+        users = {
+            'admin': 'admin123',
+            'user1': 'user123'
+        }
+        
+        if username in users and users[username] == password:
+            user = User(username, username)
+            login_user(user)
+            return jsonify({
+                'status': 'success',
+                'message': 'Login successful',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'role': user.role
+                }
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid username or password'
+            }), 401
+    
+    return render_template('login.html')
+
+@app.route('/logout', methods=['POST'])
+@login_required
+def logout():
+    logout_user()
+    return jsonify({
+        'status': 'success',
+        'message': 'Logged out successfully'
+    })
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    if current_user.is_authenticated:
+        return jsonify({
+            'status': 'success',
+            'authenticated': True,
+            'user': {
+                'id': current_user.id,
+                'username': current_user.username,
+                'role': current_user.role
+            }
+        })
+    else:
+        return jsonify({
+            'status': 'success',
+            'authenticated': False
+        })
+
 @app.route('/')
+@login_required
 def index():
     return render_template('index.html')
 
 # Product Routes
 @app.route('/api/products', methods=['GET'])
+@login_required
 def get_products():
     products = ProductService.get_products()
     return jsonify(products)
