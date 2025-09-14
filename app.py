@@ -1736,6 +1736,8 @@ def stop_background_processor():
     """Stop the background processor"""
     global background_processor
     schedule.clear()
+    processing_status['running'] = False
+    processing_status['current_barcode'] = None
     print("DEBUG: Background processor stopped")
 
 def fallback_to_requests_scraping(url, barcode):
