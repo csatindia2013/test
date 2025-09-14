@@ -288,7 +288,7 @@ def import_barcodes_with_scraping():
                 url = f"https://smartconsumer-beta.org/01/{barcode}"
                 product_data = scrape_product_data(barcode, url)
                 
-                if product_data and product_data.get('name') != 'N/A':
+                if product_data and isinstance(product_data, dict) and product_data.get('name') != 'N/A':
                     # Add to barcode_cache collection
                     product_data['barcode'] = barcode
                     product_data['createdAt'] = datetime.now().isoformat()
