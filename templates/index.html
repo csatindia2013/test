@@ -611,11 +611,12 @@
                                 <th style="width: 4%;">
                                     <input type="checkbox" id="select-all-barcodes" class="form-check-input" onclick="toggleSelectAllBarcodes()">
                                 </th>
-                                <th style="width: 18%;">Barcode</th>
-                                <th style="width: 20%;">Timestamp</th>
-                                <th style="width: 15%;">Device ID</th>
-                                <th style="width: 15%;">Location</th>
-                                <th style="width: 13%;">Status</th>
+                                <th style="width: 15%;">Barcode</th>
+                                <th style="width: 12%;">Source</th>
+                                <th style="width: 18%;">Timestamp</th>
+                                <th style="width: 12%;">Device ID</th>
+                                <th style="width: 12%;">Location</th>
+                                <th style="width: 12%;">Status</th>
                                 <th style="width: 15%;">Actions</th>
                             </tr>
                         </thead>
@@ -1943,7 +1944,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const tbody = document.getElementById('unfound-barcodes-tbody');
 
             if (!unfoundBarcodes || unfoundBarcodes.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No unfound barcodes found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No unfound barcodes found</td></tr>';
                 updateBulkDeleteBarcodesButton();
                 return;
             }
@@ -1956,12 +1957,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 const location = barcode.location || 'N/A';
                 const status = barcode.status || 'N/A';
                 
+                // Determine source display
+                let sourceDisplay = 'Firebase';
+                let sourceClass = 'bg-primary';
+                if (barcode.source === 'import') {
+                    sourceDisplay = 'Imported';
+                    sourceClass = 'bg-success';
+                } else if (barcode.source === 'manual') {
+                    sourceDisplay = 'Manual';
+                    sourceClass = 'bg-warning';
+                }
+                
                 return `
                     <tr>
                         <td>
                             <input type="checkbox" class="form-check-input barcode-checkbox" value="${barcode.id}" onchange="updateBulkDeleteBarcodesButton()">
                         </td>
                         <td><code>${barcodeValue}</code></td>
+                        <td>
+                            <span class="badge ${sourceClass}">${sourceDisplay}</span>
+                        </td>
                         <td>${timestamp}</td>
                         <td>${deviceId}</td>
                         <td>${location}</td>
