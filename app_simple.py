@@ -230,6 +230,175 @@ def test_products():
         print(f"Error in test products: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/unfound-barcodes', methods=['POST'])
+def create_unfound_barcode():
+    """Create a new unfound barcode"""
+    try:
+        data = request.get_json()
+        barcode = data.get('barcode')
+        
+        if not barcode:
+            return jsonify({'error': 'Barcode is required'}), 400
+        
+        # Check if barcode already exists
+        existing_doc = db.collection('unfound_barcodes').where('barcode', '==', barcode).get()
+        if existing_doc:
+            return jsonify({'error': 'Barcode already exists in unfound list'}), 400
+        
+        barcode_data = {
+            'barcode': barcode,
+            'createdAt': datetime.now().isoformat(),
+            'lastRetry': None,
+            'retryCount': 0
+        }
+        
+        doc_ref = db.collection('unfound_barcodes').add(barcode_data)
+        return jsonify({
+            'message': 'Unfound barcode created successfully',
+            'id': doc_ref[1].id
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/unfound-barcodes', methods=['GET'])
+def get_unfound_barcodes():
+    """Get all unfound barcodes from Firebase"""
+    try:
+        print("Getting unfound barcodes from Firebase...")
+        unfound_barcodes_ref = db.collection('unfound_barcodes')
+        docs = unfound_barcodes_ref.stream()
+        
+        unfound_barcodes = []
+        for doc in docs:
+            barcode_data = doc.to_dict()
+            barcode_data['id'] = doc.id
+            unfound_barcodes.append(barcode_data)
+        
+        print(f"Retrieved {len(unfound_barcodes)} unfound barcodes")
+        return jsonify(unfound_barcodes)
+        
+    except Exception as e:
+        print(f"Error getting unfound barcodes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/unfound-barcodes/scrape', methods=['POST'])
+def scrape_unfound_barcodes():
+    """Manually scrape unfound barcodes"""
+    try:
+        data = request.get_json()
+        barcode_ids = data.get('barcode_ids', [])
+        
+        if not barcode_ids:
+            return jsonify({'error': 'No barcode IDs provided'}), 400
+        
+        print(f"Starting manual scraping for {len(barcode_ids)} unfound barcodes...")
+        
+        processed_count = 0
+        scraped_count = 0
+        failed_count = 0
+        errors = []
+        
+        for barcode_id in barcode_ids:
+            try:
+                # Get barcode data from Firebase
+                doc_ref = db.collection('unfound_barcodes').document(barcode_id)
+                doc = doc_ref.get()
+                
+                if not doc.exists:
+                    errors.append(f"Barcode {barcode_id} not found")
+                    continue
+                
+                barcode_data = doc.to_dict()
+                barcode = barcode_data['barcode']
+                
+                print(f"🔍 Scraping unfound barcode: {barcode}")
+                
+                # Try to scrape product data
+                url = f"https://smartconsumer-beta.org/01/{barcode}"
+                product_data = scrape_product_data(barcode, url)
+                
+                if product_data and isinstance(product_data, dict) and product_data.get('name') != 'N/A':
+                    # Add to barcode_cache collection
+                    product_data['barcode'] = barcode
+                    product_data['createdAt'] = datetime.now().isoformat()
+                    product_data['updatedAt'] = datetime.now().isoformat()
+                    product_data['scanCount'] = 1
+                    product_data['syncStatus'] = 'pending'
+                    product_data['sortOrder'] = 0
+                    
+                    db.collection('barcode_cache').document(barcode).set(product_data)
+                    
+                    # Remove from unfound barcodes
+                    doc_ref.delete()
+                    
+                    scraped_count += 1
+                    print(f"✅ Successfully scraped: {product_data.get('name', 'Unknown')}")
+                else:
+                    # Update retry count
+                    retry_count = barcode_data.get('retryCount', 0) + 1
+                    doc_ref.update({
+                        'lastRetry': datetime.now().isoformat(),
+                        'retryCount': retry_count
+                    })
+                    
+                    failed_count += 1
+                    print(f"❌ Could not scrape barcode {barcode}, retry count: {retry_count}")
+                
+                processed_count += 1
+                
+            except Exception as e:
+                error_msg = f"Error processing barcode {barcode_id}: {str(e)}"
+                errors.append(error_msg)
+                print(f"❌ {error_msg}")
+        
+        response = {
+            'status': 'success',
+            'message': f'Processed {processed_count} unfound barcodes',
+            'processed_count': processed_count,
+            'scraped_count': scraped_count,
+            'failed_count': failed_count,
+            'errors': errors[:10] if errors else []
+        }
+        
+        print(f"Manual scraping completed: {processed_count} processed, {scraped_count} scraped, {failed_count} failed")
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"Manual scraping error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/unfound-barcodes/<barcode_id>', methods=['DELETE'])
+def delete_unfound_barcode(barcode_id):
+    """Delete a specific unfound barcode"""
+    try:
+        db.collection('unfound_barcodes').document(barcode_id).delete()
+        return jsonify({'message': 'Unfound barcode deleted successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/unfound-barcodes/bulk-delete', methods=['POST'])
+def bulk_delete_unfound_barcodes():
+    """Delete multiple unfound barcodes"""
+    try:
+        data = request.get_json()
+        barcode_ids = data.get('barcode_ids', [])
+        
+        deleted_count = 0
+        for barcode_id in barcode_ids:
+            try:
+                db.collection('unfound_barcodes').document(barcode_id).delete()
+                deleted_count += 1
+            except Exception as e:
+                print(f"Error deleting unfound barcode {barcode_id}: {e}")
+        
+        return jsonify({
+            'message': f'Successfully deleted {deleted_count} out of {len(barcode_ids)} unfound barcodes',
+            'deleted_count': deleted_count
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/import-barcodes', methods=['POST'])
 def import_barcodes_with_scraping():
     """Import barcodes from Excel and automatically scrape product data"""
@@ -346,6 +515,8 @@ def scrape_product_data(barcode, url):
     
     driver = None
     try:
+        print(f"🔍 Scraping barcode: {barcode}")
+        
         # Setup Chrome options for headless browsing
         chrome_options = Options()
         chrome_options.add_argument('--headless')
@@ -364,7 +535,7 @@ def scrape_product_data(barcode, url):
         try:
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1")))
         except TimeoutException:
-            pass
+            print(f"⚠️ Timeout waiting for page load for barcode: {barcode}")
         
         # Extract product data
         page_source = driver.page_source
@@ -389,9 +560,16 @@ def scrape_product_data(barcode, url):
         try:
             name_element = soup.find('h1')
             if name_element:
-                product_data['name'] = name_element.get_text().strip()
-        except:
-            pass
+                product_name = name_element.get_text().strip()
+                if product_name and product_name != '':
+                    product_data['name'] = product_name
+                    print(f"📦 Found product name: {product_name}")
+                else:
+                    print(f"⚠️ Empty product name for barcode: {barcode}")
+            else:
+                print(f"⚠️ No h1 element found for barcode: {barcode}")
+        except Exception as e:
+            print(f"❌ Error extracting name for {barcode}: {e}")
         
         # Try to extract price
         try:
@@ -406,9 +584,10 @@ def scrape_product_data(barcode, url):
                         price = float(price_match.group())
                         product_data['mrp'] = price
                         product_data['salePrice'] = price
+                        print(f"💰 Found price: ₹{price}")
                         break
-        except:
-            pass
+        except Exception as e:
+            print(f"❌ Error extracting price for {barcode}: {e}")
         
         # Try to extract image
         try:
@@ -416,8 +595,9 @@ def scrape_product_data(barcode, url):
             if img_element and img_element.get('src'):
                 product_data['imageUrl'] = img_element['src']
                 product_data['photoPath'] = img_element['src']
-        except:
-            pass
+                print(f"🖼️ Found image: {img_element['src']}")
+        except Exception as e:
+            print(f"❌ Error extracting image for {barcode}: {e}")
         
         # Try to extract brand
         try:
@@ -426,14 +606,16 @@ def scrape_product_data(barcode, url):
                 text = element.get_text().strip()
                 if text and len(text) < 50:  # Reasonable brand name length
                     product_data['brand'] = text
+                    print(f"🏷️ Found brand: {text}")
                     break
-        except:
-            pass
+        except Exception as e:
+            print(f"❌ Error extracting brand for {barcode}: {e}")
         
+        print(f"✅ Scraping completed for {barcode}: {product_data['name']}")
         return product_data
         
     except Exception as e:
-        print(f"Error scraping {barcode}: {e}")
+        print(f"❌ Error scraping {barcode}: {e}")
         return None
     finally:
         if driver:
