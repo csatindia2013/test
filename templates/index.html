@@ -595,6 +595,9 @@
                     <button class="btn btn-warning me-2" onclick="addSampleUnfoundBarcodes()">
                         <i class="fas fa-plus"></i> Add Sample Data
                     </button>
+                    <button class="btn btn-primary me-2" onclick="showImportModal()">
+                        <i class="fas fa-upload"></i> Import Excel
+                    </button>
                     <div class="input-group">
                         <input type="text" class="form-control" id="search-barcodes" placeholder="Search barcodes...">
                         <button class="btn btn-outline-secondary" onclick="searchUnfoundBarcodes()">
@@ -623,6 +626,56 @@
                         <tbody id="unfound-barcodes-tbody">
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal for Unfound Barcodes -->
+    <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="importModalLabel">
+                        <i class="fas fa-upload me-2"></i>Import Barcodes to Unfound List
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h6><i class="fas fa-info-circle me-2"></i>How it works:</h6>
+                            <ul>
+                                <li>Upload an Excel file (.xlsx or .xls) or CSV file (.csv) containing barcodes</li>
+                                <li>File must have a "barcode" column</li>
+                                <li>All barcodes are added to the unfound list for background processing</li>
+                                <li>Background processor will automatically scrape products every 30 minutes</li>
+                                <li>Existing barcodes are skipped automatically</li>
+                            </ul>
+                            
+                            <div class="mb-3">
+                                <label for="unfound-barcode-file" class="form-label">Select File</label>
+                                <input type="file" class="form-control" id="unfound-barcode-file" accept=".xlsx,.xls,.csv">
+                                <div class="form-text">Excel (.xlsx, .xls) or CSV (.csv) file must contain a "barcode" column</div>
+                            </div>
+                            <button class="btn btn-primary" onclick="importBarcodesToUnfound()" id="import-unfound-barcodes-btn">
+                                <i class="fas fa-upload me-1"></i>Import Barcodes to Unfound List
+                            </button>
+                        </div>
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-chart-bar me-2"></i>Import Status:</h6>
+                            <div id="unfound-import-status">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>Ready to import barcodes
+                                </div>
+                            </div>
+                            
+                            <h6 class="mt-4"><i class="fas fa-history me-2"></i>Recent Import:</h6>
+                            <div id="unfound-import-results" class="small">
+                                <div class="text-muted">No recent imports</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1126,6 +1179,7 @@ document.addEventListener('DOMContentLoaded', function() {
             loadCategories();
         } else if (sectionName === 'unfound-barcodes') {
             loadUnfoundBarcodes();
+            clearUnfoundImportStatus();
         } else if (sectionName === 'recently-added-products') {
             loadRecentlyAddedProducts();
         } else if (sectionName === 'data-getter') {
@@ -2178,6 +2232,121 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (error) {
                 console.error('Error adding sample unfound barcodes:', error);
                 showAlert('Error adding sample data', 'danger');
+            }
+        }
+
+        // Import Modal Functions for Unfound Barcodes
+        function showImportModal() {
+            const modal = new bootstrap.Modal(document.getElementById('importModal'));
+            modal.show();
+        }
+
+        function clearUnfoundImportStatus() {
+            document.getElementById('unfound-import-status').innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>Ready to import barcodes
+                </div>
+            `;
+            document.getElementById('unfound-import-results').innerHTML = `
+                <div class="text-muted">No recent imports</div>
+            `;
+        }
+
+        async function importBarcodesToUnfound() {
+            const fileInput = document.getElementById('unfound-barcode-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showAlert('Please select an Excel file', 'warning');
+                return;
+            }
+            
+            if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
+                showAlert('Please select a valid Excel or CSV file', 'warning');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const importBtn = document.getElementById('import-unfound-barcodes-btn');
+            const originalText = importBtn.innerHTML;
+            
+            try {
+                // Update UI to show processing
+                importBtn.disabled = true;
+                importBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
+                
+                document.getElementById('unfound-import-status').innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-spinner fa-spin me-2"></i>Processing barcodes...
+                    </div>
+                `;
+                
+                const response = await fetch('/api/import-barcodes', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // Success
+                    document.getElementById('unfound-import-status').innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>Import completed successfully!
+                        </div>
+                    `;
+                    
+                    document.getElementById('unfound-import-results').innerHTML = `
+                        <div class="small">
+                            <div><strong>Processed:</strong> ${result.processed_count} barcodes</div>
+                            <div><strong>Added to Unfound:</strong> ${result.added_to_unfound_count} barcodes</div>
+                            <div><strong>Skipped:</strong> ${result.skipped_count} existing</div>
+                            ${result.errors && result.errors.length > 0 ? 
+                                `<div class="text-warning"><strong>Errors:</strong> ${result.errors.length}</div>` : 
+                                '<div class="text-success"><strong>No errors</strong></div>'
+                            }
+                        </div>
+                    `;
+                    
+                    showAlert(`Successfully processed ${result.processed_count} barcodes! ${result.added_to_unfound_count} added to unfound list.`, 'success');
+                    
+                    // Clear file input
+                    fileInput.value = '';
+                    
+                    // Refresh unfound barcodes list
+                    loadUnfoundBarcodes();
+                    
+                    // Close modal after successful import
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                    
+                } else {
+                    // Error
+                    document.getElementById('unfound-import-status').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle me-2"></i>Import failed
+                        </div>
+                    `;
+                    
+                    showAlert(result.error || 'Import failed', 'danger');
+                }
+                
+            } catch (error) {
+                console.error('Import error:', error);
+                document.getElementById('unfound-import-status').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>Import failed
+                    </div>
+                `;
+                showAlert('Error importing barcodes: ' + error.message, 'danger');
+            } finally {
+                // Restore button
+                importBtn.disabled = false;
+                importBtn.innerHTML = originalText;
             }
         }
 
