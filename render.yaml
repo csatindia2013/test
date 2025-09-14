@@ -2,7 +2,7 @@ services:
   - type: web
     name: easybill-admin-dashboard
     env: python
-    runtime: python-3.11
+    runtime: python-3.11.9
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
