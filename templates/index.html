@@ -532,10 +532,10 @@
                         <ul>
                             <li>Upload an Excel file (.xlsx or .xls) or CSV file (.csv) containing barcodes</li>
                             <li>File must have a "barcode" column</li>
-                            <li>System automatically scrapes product data from Smart Consumer</li>
-                            <li>Successfully scraped products are added to the database</li>
-                            <li>Failed barcodes are added to the unfound list for retry</li>
+                            <li>All barcodes are added to the unfound list for scraping</li>
+                            <li>Use the "Unfound Barcodes" tab to scrape products</li>
                             <li>Existing barcodes are skipped automatically</li>
+                            <li>Two sources: Firebase DB and Import method</li>
                         </ul>
                         
                         <div class="mt-4">
@@ -546,7 +546,7 @@
                                 <div class="form-text">Excel (.xlsx, .xls) or CSV (.csv) file must contain a "barcode" column</div>
                             </div>
                             <button class="btn btn-primary" onclick="importBarcodes()" id="import-barcodes-btn">
-                                <i class="fas fa-upload me-1"></i>Import & Scrape Barcodes
+                                <i class="fas fa-upload me-1"></i>Import Barcodes to Unfound List
                             </button>
                         </div>
                         
@@ -2784,7 +2784,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.getElementById('import-results').innerHTML = `
                         <div class="small">
                             <div><strong>Processed:</strong> ${result.processed_count} barcodes</div>
-                            <div><strong>Scraped:</strong> ${result.scraped_count} products</div>
+                            <div><strong>Added to Unfound:</strong> ${result.scraped_count} barcodes</div>
                             <div><strong>Skipped:</strong> ${result.skipped_count} existing</div>
                             ${result.errors && result.errors.length > 0 ? 
                                 `<div class="text-warning"><strong>Errors:</strong> ${result.errors.length}</div>` : 
@@ -2793,7 +2793,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     `;
                     
-                    showAlert(`Successfully processed ${result.processed_count} barcodes! ${result.scraped_count} products scraped.`, 'success');
+                    showAlert(`Successfully processed ${result.processed_count} barcodes! ${result.scraped_count} added to unfound list.`, 'success');
                     
                     // Clear file input
                     fileInput.value = '';

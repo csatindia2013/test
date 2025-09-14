@@ -249,7 +249,8 @@ def create_unfound_barcode():
             'barcode': barcode,
             'createdAt': datetime.now().isoformat(),
             'lastRetry': None,
-            'retryCount': 0
+            'retryCount': 0,
+            'source': 'manual'
         }
         
         doc_ref = db.collection('unfound_barcodes').add(barcode_data)
@@ -455,32 +456,17 @@ def import_barcodes_with_scraping():
                         skipped_count += 1
                         continue
                     
-                    # Try to scrape product data
-                    url = f"https://smartconsumer-beta.org/01/{barcode}"
-                    product_data = scrape_product_data(barcode, url)
-                    
-                    if product_data and isinstance(product_data, dict) and product_data.get('name') != 'N/A':
-                        # Add to barcode_cache collection
-                        product_data['barcode'] = barcode
-                        product_data['createdAt'] = datetime.now().isoformat()
-                        product_data['updatedAt'] = datetime.now().isoformat()
-                        product_data['scanCount'] = 1
-                        product_data['syncStatus'] = 'pending'
-                        product_data['sortOrder'] = 0
-                        
-                        db.collection('barcode_cache').document(barcode).set(product_data)
-                        scraped_count += 1
-                        print(f"✅ Successfully scraped: {product_data.get('name', 'Unknown')}")
-                    else:
-                        # Add to unfound_barcodes for retry
-                        unfound_data = {
-                            'barcode': barcode,
-                            'createdAt': datetime.now().isoformat(),
-                            'lastRetry': None,
-                            'retryCount': 0
-                        }
-                        db.collection('unfound_barcodes').add(unfound_data)
-                        print(f"❌ Could not scrape barcode {barcode}, added to unfound list")
+                    # Add to unfound_barcodes for scraping later
+                    unfound_data = {
+                        'barcode': barcode,
+                        'createdAt': datetime.now().isoformat(),
+                        'lastRetry': None,
+                        'retryCount': 0,
+                        'source': 'import'
+                    }
+                    db.collection('unfound_barcodes').add(unfound_data)
+                    scraped_count += 1  # Count as processed for import
+                    print(f"📝 Added barcode {barcode} to unfound list for scraping")
                     
                     processed_count += 1
                     
@@ -530,32 +516,17 @@ def import_barcodes_with_scraping():
                         skipped_count += 1
                         continue
                     
-                    # Try to scrape product data
-                    url = f"https://smartconsumer-beta.org/01/{barcode}"
-                    product_data = scrape_product_data(barcode, url)
-                    
-                    if product_data and isinstance(product_data, dict) and product_data.get('name') != 'N/A':
-                        # Add to barcode_cache collection
-                        product_data['barcode'] = barcode
-                        product_data['createdAt'] = datetime.now().isoformat()
-                        product_data['updatedAt'] = datetime.now().isoformat()
-                        product_data['scanCount'] = 1
-                        product_data['syncStatus'] = 'pending'
-                        product_data['sortOrder'] = 0
-                        
-                        db.collection('barcode_cache').document(barcode).set(product_data)
-                        scraped_count += 1
-                        print(f"✅ Successfully scraped: {product_data.get('name', 'Unknown')}")
-                    else:
-                        # Add to unfound_barcodes for retry
-                        unfound_data = {
-                            'barcode': barcode,
-                            'createdAt': datetime.now().isoformat(),
-                            'lastRetry': None,
-                            'retryCount': 0
-                        }
-                        db.collection('unfound_barcodes').add(unfound_data)
-                        print(f"❌ Could not scrape barcode {barcode}, added to unfound list")
+                    # Add to unfound_barcodes for scraping later
+                    unfound_data = {
+                        'barcode': barcode,
+                        'createdAt': datetime.now().isoformat(),
+                        'lastRetry': None,
+                        'retryCount': 0,
+                        'source': 'import'
+                    }
+                    db.collection('unfound_barcodes').add(unfound_data)
+                    scraped_count += 1  # Count as processed for import
+                    print(f"📝 Added barcode {barcode} to unfound list for scraping")
                     
                     processed_count += 1
                     
@@ -573,7 +544,7 @@ def import_barcodes_with_scraping():
             'errors': errors[:10] if errors else []
         }
         
-        print(f"Import completed: {processed_count} processed, {scraped_count} scraped, {skipped_count} skipped")
+        print(f"Import completed: {processed_count} processed, {scraped_count} added to unfound list, {skipped_count} skipped")
         return jsonify(response)
         
     except Exception as e:
