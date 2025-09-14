@@ -215,6 +215,12 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('recently-added-products')">
+                        <i class="fas fa-plus-circle me-2"></i>
+                        Recently Added New Products
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" href="#" onclick="showSection('data-getter')">
                         <i class="fas fa-download me-2"></i>
                         Data Getter
@@ -297,8 +303,60 @@
                                 </table>
         </div>
     </div>
+        </div>
+    </div>
+
+    <!-- Recently Added Products Section -->
+    <div id="recently-added-products-section" class="content-section" style="display: none;">
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3">
+            <h1 class="h2">Recently Added New Products</h1>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Products Added by Background Processor</h5>
+                <div>
+                    <button id="bulk-verify-products-btn" class="btn btn-success me-2" disabled onclick="bulkVerifyProducts()">
+                        <i class="fas fa-check"></i> Verify Selected (0)
+                    </button>
+                    <button id="bulk-clear-products-btn" class="btn btn-danger me-2" disabled onclick="bulkClearProducts()">
+                        <i class="fas fa-trash"></i> Clear Selected (0)
+                    </button>
+                    <button class="btn btn-primary me-2" onclick="loadRecentlyAddedProducts()">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="search-recent-products" placeholder="Search products...">
+                        <button class="btn btn-outline-secondary" onclick="searchRecentProducts()">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th style="width: 4%;">
+                                    <input type="checkbox" id="select-all-recent-products" class="form-check-input" onclick="toggleSelectAllRecentProducts()">
+                                </th>
+                                <th style="width: 15%;">Barcode</th>
+                                <th style="width: 25%;">Product Name</th>
+                                <th style="width: 15%;">Added At</th>
+                                <th style="width: 10%;">Source</th>
+                                <th style="width: 10%;">Status</th>
+                                <th style="width: 10%;">Verified At</th>
+                                <th style="width: 11%;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recently-added-products-tbody">
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
+    </div>
 
     <!-- Data Getter Section -->
     <div id="data-getter-section" class="content-section" style="display: none;">
@@ -938,6 +996,8 @@ document.addEventListener('DOMContentLoaded', function() {
             loadCategories();
         } else if (sectionName === 'unfound-barcodes') {
             loadUnfoundBarcodes();
+        } else if (sectionName === 'recently-added-products') {
+            loadRecentlyAddedProducts();
         } else if (sectionName === 'data-getter') {
             // Clear any previous data when switching to data getter
             clearDataGetterResults();
@@ -1967,6 +2027,244 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Error adding sample unfound barcodes:', error);
                 showAlert('Error adding sample data', 'danger');
             }
+        }
+
+        // Recently Added Products Functions
+        let currentRecentlyAddedProducts = [];
+
+        async function loadRecentlyAddedProducts() {
+            try {
+                const response = await fetch('/api/recently-added-products');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    currentRecentlyAddedProducts = data.data || [];
+                } else {
+                    currentRecentlyAddedProducts = [];
+                    console.error('Error loading recently added products:', data.message);
+                }
+                
+                renderRecentlyAddedProductsTable(currentRecentlyAddedProducts);
+            } catch (error) {
+                console.error('Error loading recently added products:', error);
+                showAlert('Error loading recently added products', 'danger');
+            }
+        }
+
+        function renderRecentlyAddedProductsTable(products) {
+            const tbody = document.getElementById('recently-added-products-tbody');
+
+            if (!products || products.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No recently added products found</td></tr>';
+                updateBulkVerifyProductsButton();
+                updateBulkClearProductsButton();
+                return;
+            }
+
+            const html = products.map(product => {
+                const addedAt = product.addedAt ? new Date(product.addedAt).toLocaleString() : 'N/A';
+                const verifiedAt = product.verifiedAt ? new Date(product.verifiedAt).toLocaleString() : 'N/A';
+                const status = product.verified ? 'Verified' : 'Pending';
+                const statusClass = product.verified ? 'success' : 'warning';
+                
+                return `
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="form-check-input recent-product-checkbox" value="${product.id}" onchange="updateBulkButtons()">
+                        </td>
+                        <td><code>${product.barcode || 'N/A'}</code></td>
+                        <td>${product.productName || 'Unknown'}</td>
+                        <td>${addedAt}</td>
+                        <td>${product.source || 'N/A'}</td>
+                        <td>
+                            <span class="badge bg-${statusClass}">${status}</span>
+                        </td>
+                        <td>${verifiedAt}</td>
+                        <td>
+                            ${!product.verified ? `
+                                <button class="btn btn-sm btn-success me-1" onclick="verifyProduct('${product.id}')">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                            ` : ''}
+                            <button class="btn btn-sm btn-danger" onclick="clearProduct('${product.id}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            tbody.innerHTML = html;
+            updateBulkVerifyProductsButton();
+            updateBulkClearProductsButton();
+        }
+
+        async function verifyProduct(productId) {
+            try {
+                const response = await fetch('/api/recently-added-products/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ productIds: [productId] })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showAlert('Product verified successfully!', 'success');
+                    loadRecentlyAddedProducts();
+                } else {
+                    showAlert('Error verifying product: ' + data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error verifying product:', error);
+                showAlert('Error verifying product', 'danger');
+            }
+        }
+
+        async function clearProduct(productId) {
+            if (!confirm('Are you sure you want to clear this product from the recently added list?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/recently-added-products/clear', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ productIds: [productId] })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showAlert('Product cleared successfully!', 'success');
+                    loadRecentlyAddedProducts();
+                } else {
+                    showAlert('Error clearing product: ' + data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error clearing product:', error);
+                showAlert('Error clearing product', 'danger');
+            }
+        }
+
+        function toggleSelectAllRecentProducts() {
+            const selectAll = document.getElementById('select-all-recent-products');
+            const checkboxes = document.querySelectorAll('.recent-product-checkbox');
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAll.checked;
+            });
+            
+            updateBulkButtons();
+        }
+
+        function updateBulkButtons() {
+            updateBulkVerifyProductsButton();
+            updateBulkClearProductsButton();
+        }
+
+        function updateBulkVerifyProductsButton() {
+            const selectedCheckboxes = document.querySelectorAll('.recent-product-checkbox:checked');
+            const verifyBtn = document.getElementById('bulk-verify-products-btn');
+            
+            if (selectedCheckboxes.length > 0) {
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = `<i class="fas fa-check"></i> Verify Selected (${selectedCheckboxes.length})`;
+            } else {
+                verifyBtn.disabled = true;
+                verifyBtn.innerHTML = '<i class="fas fa-check"></i> Verify Selected (0)';
+            }
+        }
+
+        function updateBulkClearProductsButton() {
+            const selectedCheckboxes = document.querySelectorAll('.recent-product-checkbox:checked');
+            const clearBtn = document.getElementById('bulk-clear-products-btn');
+            
+            if (selectedCheckboxes.length > 0) {
+                clearBtn.disabled = false;
+                clearBtn.innerHTML = `<i class="fas fa-trash"></i> Clear Selected (${selectedCheckboxes.length})`;
+            } else {
+                clearBtn.disabled = true;
+                clearBtn.innerHTML = '<i class="fas fa-trash"></i> Clear Selected (0)';
+            }
+        }
+
+        async function bulkVerifyProducts() {
+            const selectedCheckboxes = document.querySelectorAll('.recent-product-checkbox:checked');
+            const productIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+            
+            if (productIds.length === 0) {
+                showAlert('Please select products to verify', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/recently-added-products/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ productIds })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showAlert(`Successfully verified ${data.verifiedCount} products!`, 'success');
+                    loadRecentlyAddedProducts();
+                } else {
+                    showAlert('Error verifying products: ' + data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error verifying products:', error);
+                showAlert('Error verifying products', 'danger');
+            }
+        }
+
+        async function bulkClearProducts() {
+            const selectedCheckboxes = document.querySelectorAll('.recent-product-checkbox:checked');
+            const productIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+            
+            if (productIds.length === 0) {
+                showAlert('Please select products to clear', 'warning');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to clear ${productIds.length} products from the recently added list?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/recently-added-products/clear', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ productIds })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showAlert(`Successfully cleared ${data.clearedCount} products!`, 'success');
+                    loadRecentlyAddedProducts();
+                } else {
+                    showAlert('Error clearing products: ' + data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error clearing products:', error);
+                showAlert('Error clearing products', 'danger');
+            }
+        }
+
+        function searchRecentProducts() {
+            const searchTerm = document.getElementById('search-recent-products').value.toLowerCase();
+            const filteredProducts = currentRecentlyAddedProducts.filter(product => 
+                (product.barcode && product.barcode.toLowerCase().includes(searchTerm)) ||
+                (product.productName && product.productName.toLowerCase().includes(searchTerm)) ||
+                (product.source && product.source.toLowerCase().includes(searchTerm))
+            );
+            renderRecentlyAddedProductsTable(filteredProducts);
         }
 
         // Excel Import/Export Functions

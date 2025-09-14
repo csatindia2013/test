@@ -1044,6 +1044,120 @@ def create_sample_product():
             "message": str(e)
         })
 
+# Recently Added Products API Endpoints
+@app.route('/api/recently-added-products', methods=['GET'])
+def get_recently_added_products():
+    """Get recently added products from background processor"""
+    try:
+        if not db:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 500
+        
+        # Get recently added products
+        recently_added_ref = db.collection('recently_added_products')
+        recently_added_products = []
+        
+        for doc in recently_added_ref.stream():
+            product_data = doc.to_dict()
+            product_data['id'] = doc.id
+            recently_added_products.append(product_data)
+        
+        # Sort by addedAt (newest first)
+        recently_added_products.sort(key=lambda x: x.get('addedAt', ''), reverse=True)
+        
+        return jsonify({
+            'status': 'success',
+            'data': recently_added_products
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to get recently added products: {str(e)}'
+        }), 500
+
+@app.route('/api/recently-added-products/verify', methods=['POST'])
+def verify_recently_added_products():
+    """Mark recently added products as verified"""
+    try:
+        if not db:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 500
+        
+        data = request.get_json()
+        product_ids = data.get('productIds', [])
+        
+        if not product_ids:
+            return jsonify({
+                'status': 'error',
+                'message': 'No product IDs provided'
+            }), 400
+        
+        verified_count = 0
+        for product_id in product_ids:
+            try:
+                db.collection('recently_added_products').document(product_id).update({
+                    'verified': True,
+                    'verifiedAt': datetime.now().isoformat()
+                })
+                verified_count += 1
+            except Exception as e:
+                print(f"Error verifying product {product_id}: {e}")
+                continue
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully verified {verified_count} products',
+            'verifiedCount': verified_count
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to verify products: {str(e)}'
+        }), 500
+
+@app.route('/api/recently-added-products/clear', methods=['POST'])
+def clear_recently_added_products():
+    """Remove verified recently added products from the list"""
+    try:
+        if not db:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 500
+        
+        data = request.get_json()
+        product_ids = data.get('productIds', [])
+        
+        if not product_ids:
+            return jsonify({
+                'status': 'error',
+                'message': 'No product IDs provided'
+            }), 400
+        
+        cleared_count = 0
+        for product_id in product_ids:
+            try:
+                db.collection('recently_added_products').document(product_id).delete()
+                cleared_count += 1
+            except Exception as e:
+                print(f"Error clearing product {product_id}: {e}")
+                continue
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully cleared {cleared_count} products',
+            'clearedCount': cleared_count
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to clear products: {str(e)}'
+        }), 500
+
 def process_unfound_barcodes_background():
     """Background job to process unfound barcodes"""
     global processing_status, processed_barcodes_history
@@ -1101,7 +1215,21 @@ def process_unfound_barcodes_background():
                     product_data['originalUnfoundId'] = barcode_data['id']
                     product_data['createdAt'] = processed_at
                     
-                    db.collection('products').add(product_data)
+                    # Add to products collection
+                    product_ref = db.collection('products').add(product_data)
+                    product_id = product_ref[1].id  # Get the document ID
+                    
+                    # Also add to recently added products collection for tracking
+                    recently_added_data = {
+                        'productId': product_id,
+                        'barcode': barcode_data['barcode'],
+                        'productName': product_data.get('name', 'Unknown'),
+                        'addedAt': processed_at,
+                        'source': 'background_processor',
+                        'originalUnfoundId': barcode_data['id'],
+                        'verified': False
+                    }
+                    db.collection('recently_added_products').add(recently_added_data)
                     
                     # Remove from unfound barcodes
                     db.collection('unfound_barcodes').document(barcode_data['id']).delete()
