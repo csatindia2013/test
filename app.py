@@ -1,7 +1,10 @@
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session, current_app
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.exceptions import RequestEntityTooLarge
 from datetime import datetime, timezone
 import json
 import firebase_admin
@@ -24,17 +27,27 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from webdriver_manager.chrome import ChromeDriverManager
 import threading
 import schedule
+import logging
+from logging.handlers import RotatingFileHandler
+from dotenv import load_dotenv
+from config import config
 
-# Initialize Flask app
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'pos-dashboard-secret-key')
+# Load environment variables
+load_dotenv()
 
-# Initialize Flask-Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-login_manager.login_message = 'Please log in to access this page.'
-login_manager.login_message_category = 'info'
+# Global variables
+db = None
+firebase_status = "disconnected"
+background_processor = None
+processing_status = {
+    'running': False,
+    'last_run': None,
+    'processed_count': 0,
+    'success_count': 0,
+    'error_count': 0,
+    'current_barcode': None
+}
+processed_barcodes_history = []
 
 # User class for Flask-Login
 class User(UserMixin):
@@ -43,25 +56,248 @@ class User(UserMixin):
         self.username = username
         self.role = role
 
-@login_manager.user_loader
-def load_user(user_id):
-    # Load users from environment variables or use defaults
-    admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
-    admin_role = os.environ.get('ADMIN_ROLE', 'admin')
-    user1_username = os.environ.get('USER1_USERNAME', 'user1')
-    user1_role = os.environ.get('USER1_ROLE', 'user')
+def create_app(config_name=None):
+    """Application factory pattern"""
+    app = Flask(__name__)
     
-    users = {
-        admin_username: User(admin_username, admin_username, admin_role),
-        user1_username: User(user1_username, user1_username, user1_role)
-    }
-    return users.get(user_id)
+    # Load configuration
+    config_name = config_name or os.environ.get('FLASK_ENV', 'development')
+    app.config.from_object(config[config_name])
+    config[config_name].init_app(app)
+    
+    # Initialize extensions
+    CORS(app, origins=app.config['CORS_ORIGINS'])
+    
+    # Initialize Flask-Login
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = 'login'
+    login_manager.login_message = 'Please log in to access this page.'
+    login_manager.login_message_category = 'info'
+    
+    @login_manager.user_loader
+    def load_user(user_id):
+        admin_username = app.config['ADMIN_USERNAME']
+        admin_role = 'admin'
+        user1_username = app.config['USER1_USERNAME']
+        user1_role = 'user'
+        
+        users = {
+            admin_username: User(admin_username, admin_username, admin_role),
+            user1_username: User(user1_username, user1_username, user1_role)
+        }
+        return users.get(user_id)
+    
+    # Initialize rate limiting
+    limiter = Limiter(
+        app,
+        key_func=get_remote_address,
+        default_limits=[app.config['RATELIMIT_DEFAULT']]
+    )
+    
+    # Initialize Firebase
+    init_firebase(app)
+    
+    # Register blueprints/routes
+    register_routes(app, limiter)
+    
+    # Initialize background processor
+    init_background_processor(app)
+    
+    return app
 
-CORS(app)
+def init_firebase(app):
+    """Initialize Firebase with proper error handling"""
+    global db, firebase_status
+    
+    try:
+        app.logger.info("Initializing Firebase...")
+        
+        # Try to load service account file or environment variables
+        try:
+            app.logger.info("Loading service account file...")
+            cred = credentials.Certificate('firebase-service-account.json')
+            firebase_admin.initialize_app(cred)
+            app.logger.info("Firebase app initialized with service account")
+        except Exception as e:
+            app.logger.warning(f"Service account file failed: {e}")
+            try:
+                firebase_config = {
+                    "type": "service_account",
+                    "project_id": app.config['FIREBASE_PROJECT_ID'],
+                    "private_key_id": app.config['FIREBASE_PRIVATE_KEY_ID'],
+                    "private_key": app.config['FIREBASE_PRIVATE_KEY'],
+                    "client_email": app.config['FIREBASE_CLIENT_EMAIL'],
+                    "client_id": app.config['FIREBASE_CLIENT_ID'],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{app.config['FIREBASE_CLIENT_EMAIL']}"
+                }
+                if all(firebase_config.values()):
+                    cred = credentials.Certificate(firebase_config)
+                    firebase_admin.initialize_app(cred)
+                    app.logger.info("Firebase app initialized with environment variables")
+                else:
+                    raise Exception("Missing Firebase environment variables")
+            except Exception as e2:
+                app.logger.warning(f"Environment variables failed: {e2}")
+                app.logger.info("Trying Application Default Credentials...")
+                firebase_admin.initialize_app()
+                app.logger.info("Firebase app initialized with default credentials")
+        
+        db = firestore.client()
+        firebase_status = "connected"
+        app.logger.info("Firebase connection established successfully")
+        
+    except Exception as e:
+        app.logger.error(f"Failed to initialize Firebase: {e}")
+        firebase_status = "disconnected"
+        db = None
 
-# Initialize Firebase
-db = None
-firebase_status = "disconnected"
+def register_routes(app, limiter):
+    """Register all application routes"""
+    
+    # Health check endpoint
+    @app.route('/health')
+    def health_check():
+        """Health check endpoint for load balancers"""
+        return jsonify({
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'firebase_status': firebase_status,
+            'version': '1.0.0'
+        })
+    
+    # Authentication Routes
+    @app.route('/login', methods=['GET', 'POST'])
+    @limiter.limit("10 per minute")
+    def login():
+        if request.method == 'POST':
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
+            
+            # Load credentials from config
+            admin_username = app.config['ADMIN_USERNAME']
+            admin_password_hash = app.config['ADMIN_PASSWORD_HASH']
+            user1_username = app.config['USER1_USERNAME']
+            user1_password_hash = app.config['USER1_PASSWORD_HASH']
+            
+            users = {
+                admin_username: admin_password_hash,
+                user1_username: user1_password_hash
+            }
+            
+            if username in users and check_password_hash(users[username], password):
+                user = User(username, username)
+                login_user(user)
+                app.logger.info(f"User {username} logged in successfully")
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Login successful',
+                    'user': {
+                        'id': user.id,
+                        'username': user.username,
+                        'role': user.role
+                    }
+                })
+            else:
+                app.logger.warning(f"Failed login attempt for username: {username}")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Invalid username or password'
+                }), 401
+        
+        return render_template('login.html')
+
+    @app.route('/logout', methods=['POST'])
+    @login_required
+    def logout():
+        app.logger.info(f"User {current_user.username} logged out")
+        logout_user()
+        return jsonify({
+            'status': 'success',
+            'message': 'Logged out successfully'
+        })
+
+    @app.route('/api/auth/status', methods=['GET'])
+    def auth_status():
+        if current_user.is_authenticated:
+            return jsonify({
+                'status': 'success',
+                'authenticated': True,
+                'user': {
+                    'id': current_user.id,
+                    'username': current_user.username,
+                    'role': current_user.role
+                }
+            })
+        else:
+            return jsonify({
+                'status': 'success',
+                'authenticated': False
+            })
+
+    @app.route('/')
+    @login_required
+    def index():
+        return render_template('index.html')
+    
+    # Error handlers
+    @app.errorhandler(400)
+    def bad_request(e):
+        app.logger.warning(f"Bad request: {e}")
+        return jsonify({'error': 'Bad request'}), 400
+    
+    @app.errorhandler(401)
+    def unauthorized(e):
+        app.logger.warning(f"Unauthorized access attempt: {e}")
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    @app.errorhandler(403)
+    def forbidden(e):
+        app.logger.warning(f"Forbidden access attempt: {e}")
+        return jsonify({'error': 'Forbidden'}), 403
+    
+    @app.errorhandler(404)
+    def not_found(e):
+        app.logger.info(f"Not found: {e}")
+        return jsonify({'error': 'Not found'}), 404
+    
+    @app.errorhandler(413)
+    def too_large(e):
+        app.logger.warning(f"File too large: {e}")
+        return jsonify({'error': 'File too large'}), 413
+    
+    @app.errorhandler(429)
+    def ratelimit_handler(e):
+        app.logger.warning(f"Rate limit exceeded: {e}")
+        return jsonify({'error': 'Rate limit exceeded'}), 429
+    
+    @app.errorhandler(500)
+    def internal_error(e):
+        app.logger.error(f"Internal server error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    
+    @app.errorhandler(502)
+    def bad_gateway(e):
+        app.logger.error(f"Bad gateway: {e}")
+        return jsonify({'error': 'Service temporarily unavailable'}), 502
+    
+    @app.errorhandler(503)
+    def service_unavailable(e):
+        app.logger.error(f"Service unavailable: {e}")
+        return jsonify({'error': 'Service temporarily unavailable'}), 503
+
+def init_background_processor(app):
+    """Initialize background processor if enabled"""
+    if app.config['BACKGROUND_PROCESSOR_ENABLED']:
+        # Background processor initialization code here
+        pass
+
+# Create the app instance
+app = create_app()
 
 # Background Processing System
 background_processor = None
