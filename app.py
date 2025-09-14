@@ -2259,6 +2259,216 @@ def extract_product_data(soup, barcode):
         print(f"Error extracting product data: {e}")
         return None
 
+@app.route('/api/import-barcodes', methods=['POST'])
+@login_required
+def import_barcodes_with_scraping():
+    """Import barcodes from Excel and automatically scrape product data"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            return jsonify({'error': 'File must be an Excel file (.xlsx or .xls)'}), 400
+        
+        # Read Excel file
+        from openpyxl import load_workbook
+        wb = load_workbook(file)
+        ws = wb.active
+        
+        # Get headers from first row
+        headers = [cell.value for cell in ws[1]]
+        
+        # Check if barcode column exists
+        if 'barcode' not in headers:
+            return jsonify({'error': 'Excel file must contain a "barcode" column'}), 400
+        
+        # Process barcodes
+        processed_count = 0
+        scraped_count = 0
+        skipped_count = 0
+        errors = []
+        
+        print(f"Starting barcode import and scraping...")
+        
+        for row_num in range(2, ws.max_row + 1):
+            try:
+                row_data = {}
+                for col_num, header in enumerate(headers, 1):
+                    cell_value = ws.cell(row=row_num, column=col_num).value
+                    row_data[header] = cell_value
+                
+                barcode = str(row_data['barcode']).strip()
+                if not barcode or barcode == 'None':
+                    continue
+                
+                print(f"Processing barcode: {barcode}")
+                
+                # Check if barcode already exists in barcode_cache
+                existing_doc = db.collection('barcode_cache').document(barcode).get()
+                if existing_doc.exists:
+                    print(f"Barcode {barcode} already exists, skipping")
+                    skipped_count += 1
+                    continue
+                
+                # Try to scrape product data
+                url = f"https://smartconsumer-beta.org/01/{barcode}"
+                product_data = scrape_product_data_for_import(barcode, url)
+                
+                if product_data and product_data.get('name') != 'N/A':
+                    # Add to barcode_cache collection
+                    product_data['barcode'] = barcode
+                    product_data['createdAt'] = datetime.now().isoformat()
+                    product_data['updatedAt'] = datetime.now().isoformat()
+                    product_data['scanCount'] = 1
+                    product_data['syncStatus'] = 'pending'
+                    product_data['sortOrder'] = 0
+                    
+                    db.collection('barcode_cache').document(barcode).set(product_data)
+                    scraped_count += 1
+                    print(f"✅ Successfully scraped: {product_data.get('name', 'Unknown')}")
+                else:
+                    # Add to unfound_barcodes for retry
+                    unfound_data = {
+                        'barcode': barcode,
+                        'createdAt': datetime.now().isoformat(),
+                        'lastRetry': None,
+                        'retryCount': 0
+                    }
+                    db.collection('unfound_barcodes').add(unfound_data)
+                    print(f"❌ Could not scrape barcode {barcode}, added to unfound list")
+                
+                processed_count += 1
+                
+            except Exception as e:
+                error_msg = f"Row {row_num}: {str(e)}"
+                errors.append(error_msg)
+                print(f"Error processing row {row_num}: {e}")
+        
+        response = {
+            'status': 'success',
+            'message': f'Processed {processed_count} barcodes',
+            'processed_count': processed_count,
+            'scraped_count': scraped_count,
+            'skipped_count': skipped_count,
+            'errors': errors[:10] if errors else []
+        }
+        
+        print(f"Import completed: {processed_count} processed, {scraped_count} scraped, {skipped_count} skipped")
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"Import error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def scrape_product_data_for_import(barcode, url):
+    """Scrape product data from Smart Consumer website for import"""
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import TimeoutException
+    from bs4 import BeautifulSoup
+    
+    driver = None
+    try:
+        # Setup Chrome options for headless browsing
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        
+        # Initialize Chrome driver
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.get(url)
+        
+        # Wait for page to load
+        wait = WebDriverWait(driver, 10)
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1")))
+        except TimeoutException:
+            pass
+        
+        # Extract product data
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        # Extract product information
+        product_data = {
+            'name': 'N/A',
+            'brand': '',
+            'category': '',
+            'mrp': 0.0,
+            'salePrice': 0.0,
+            'imageUrl': '',
+            'description': '',
+            'size': '',
+            'unit': '',
+            'isActive': True,
+            'useInFirstStart': False
+        }
+        
+        # Try to extract product name
+        try:
+            name_element = soup.find('h1')
+            if name_element:
+                product_data['name'] = name_element.get_text().strip()
+        except:
+            pass
+        
+        # Try to extract price
+        try:
+            price_elements = soup.find_all(['span', 'div'], class_=lambda x: x and 'price' in x.lower())
+            for element in price_elements:
+                text = element.get_text().strip()
+                if '₹' in text or 'Rs' in text:
+                    # Extract numeric value
+                    import re
+                    price_match = re.search(r'[\d,]+\.?\d*', text.replace(',', ''))
+                    if price_match:
+                        price = float(price_match.group())
+                        product_data['mrp'] = price
+                        product_data['salePrice'] = price
+                        break
+        except:
+            pass
+        
+        # Try to extract image
+        try:
+            img_element = soup.find('img')
+            if img_element and img_element.get('src'):
+                product_data['imageUrl'] = img_element['src']
+                product_data['photoPath'] = img_element['src']
+        except:
+            pass
+        
+        # Try to extract brand
+        try:
+            brand_elements = soup.find_all(['span', 'div'], class_=lambda x: x and 'brand' in x.lower())
+            for element in brand_elements:
+                text = element.get_text().strip()
+                if text and len(text) < 50:  # Reasonable brand name length
+                    product_data['brand'] = text
+                    break
+        except:
+            pass
+        
+        return product_data
+        
+    except Exception as e:
+        print(f"Error scraping {barcode}: {e}")
+        return None
+    finally:
+        if driver:
+            driver.quit()
+
 if __name__ == '__main__':
     import os
     
