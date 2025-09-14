@@ -584,7 +584,13 @@
 
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Unfound Barcodes List</h5>
+                <h5 class="mb-0">
+                    Unfound Barcodes List 
+                    <span id="unfound-count-badge" class="badge bg-info ms-2">0</span>
+                    <span id="unfound-refresh-indicator" class="badge bg-success ms-2" style="display: none;">
+                        <i class="fas fa-sync-alt"></i> Updated
+                    </span>
+                </h5>
                             <div>
                     <button id="bulk-delete-barcodes-btn" class="btn btn-danger me-2" disabled onclick="bulkDeleteUnfoundBarcodes()">
                         <i class="fas fa-trash"></i> Delete Selected (0)
@@ -2001,6 +2007,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!unfoundBarcodes || unfoundBarcodes.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No unfound barcodes found</td></tr>';
                 updateBulkDeleteBarcodesButton();
+                
+                // Update count badge to 0
+                const countBadge = document.getElementById('unfound-count-badge');
+                if (countBadge) {
+                    countBadge.textContent = '0';
+                }
                 return;
             }
 
@@ -2051,6 +2063,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             tbody.innerHTML = html;
             updateBulkDeleteBarcodesButton();
+            
+            // Update count badge
+            const countBadge = document.getElementById('unfound-count-badge');
+            if (countBadge) {
+                countBadge.textContent = unfoundBarcodes.length;
+            }
         }
 
         async function deleteUnfoundBarcode(barcodeId) {
@@ -2316,7 +2334,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     fileInput.value = '';
                     
                     // Refresh unfound barcodes list
-                    loadUnfoundBarcodes();
+                    refreshUnfoundBarcodesTable();
                     
                     // Close modal after successful import
                     const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
@@ -2349,6 +2367,36 @@ document.addEventListener('DOMContentLoaded', function() {
                 importBtn.innerHTML = originalText;
             }
         }
+
+        // Global function to refresh unfound barcodes table from anywhere
+        function refreshUnfoundBarcodesTable() {
+            const unfoundSection = document.getElementById('unfound-barcodes-section');
+            if (unfoundSection && unfoundSection.style.display !== 'none') {
+                loadUnfoundBarcodes();
+                showRefreshIndicator();
+                console.log('Unfound barcodes table refreshed');
+            }
+        }
+
+        // Show refresh indicator
+        function showRefreshIndicator() {
+            const indicator = document.getElementById('unfound-refresh-indicator');
+            if (indicator) {
+                indicator.style.display = 'inline-block';
+                // Hide after 3 seconds
+                setTimeout(() => {
+                    indicator.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // Auto-refresh unfound barcodes table every 30 seconds when visible
+        setInterval(() => {
+            const unfoundSection = document.getElementById('unfound-barcodes-section');
+            if (unfoundSection && unfoundSection.style.display !== 'none') {
+                loadUnfoundBarcodes();
+            }
+        }, 30000);
 
         // Recently Added Products Functions
         let currentRecentlyAddedProducts = [];
@@ -2986,6 +3034,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // Clear file input
                     fileInput.value = '';
+                    
+                    // Refresh unfound barcodes table if it's currently visible
+                    refreshUnfoundBarcodesTable();
                     
                 } else {
                     // Error
