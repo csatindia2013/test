@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timezone
 import json
 import firebase_admin
@@ -44,10 +45,15 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    # Simple in-memory user storage (in production, use a database)
+    # Load users from environment variables or use defaults
+    admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
+    admin_role = os.environ.get('ADMIN_ROLE', 'admin')
+    user1_username = os.environ.get('USER1_USERNAME', 'user1')
+    user1_role = os.environ.get('USER1_ROLE', 'user')
+    
     users = {
-        'admin': User('admin', 'admin', 'admin'),
-        'user1': User('user1', 'user1', 'user')
+        admin_username: User(admin_username, admin_username, admin_role),
+        user1_username: User(user1_username, user1_username, user1_role)
     }
     return users.get(user_id)
 
@@ -382,13 +388,18 @@ def login():
         username = data.get('username')
         password = data.get('password')
         
-        # Simple authentication (in production, use proper password hashing)
+        # Load credentials from environment variables with secure defaults
+        admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
+        admin_password_hash = os.environ.get('ADMIN_PASSWORD_HASH', generate_password_hash('admin123'))
+        user1_username = os.environ.get('USER1_USERNAME', 'user1')
+        user1_password_hash = os.environ.get('USER1_PASSWORD_HASH', generate_password_hash('user123'))
+        
         users = {
-            'admin': 'admin123',
-            'user1': 'user123'
+            admin_username: admin_password_hash,
+            user1_username: user1_password_hash
         }
         
-        if username in users and users[username] == password:
+        if username in users and check_password_hash(users[username], password):
             user = User(username, username)
             login_user(user)
             return jsonify({
