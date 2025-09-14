@@ -593,8 +593,13 @@ class ProductService:
             product_data['createdAt'] = datetime.now().isoformat()
             product_data['updatedAt'] = datetime.now().isoformat()
             
-            doc_ref = db.collection('products').add(product_data)
-            return {"id": doc_ref[1].id, "message": "Product created successfully"}
+            # Use barcode as document ID if available, otherwise generate random ID
+            if 'barcode' in product_data and product_data['barcode']:
+                doc_ref = db.collection('products').document(product_data['barcode']).set(product_data)
+                return {"id": product_data['barcode'], "message": "Product created successfully"}
+            else:
+                doc_ref = db.collection('products').add(product_data)
+                return {"id": doc_ref[1].id, "message": "Product created successfully"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -1385,11 +1390,11 @@ def create_sample_product():
             'updatedAt': datetime.now().isoformat()
         }
         
-        doc_ref = db.collection('products').add(sample_product)
+        doc_ref = db.collection('products').document(sample_product['barcode']).set(sample_product)
         return jsonify({
             "status": "success",
             "message": "Sample product created successfully",
-            "product_id": doc_ref[1].id
+            "product_id": sample_product['barcode']
         })
     except Exception as e:
         return jsonify({
@@ -1568,13 +1573,12 @@ def process_unfound_barcodes_background():
                     product_data['originalUnfoundId'] = barcode_data['id']
                     product_data['createdAt'] = processed_at
                     
-                    # Add to products collection
-                    product_ref = db.collection('products').add(product_data)
-                    product_id = product_ref[1].id  # Get the document ID
+                    # Add to products collection using barcode as document ID
+                    db.collection('products').document(barcode_data['barcode']).set(product_data)
                     
                     # Also add to recently added products collection for tracking
                     recently_added_data = {
-                        'productId': product_id,
+                        'productId': barcode_data['barcode'],  # Use barcode as ID
                         'barcode': barcode_data['barcode'],
                         'productName': product_data.get('name', 'Unknown'),
                         'addedAt': processed_at,
