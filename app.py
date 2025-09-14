@@ -2284,11 +2284,19 @@ def import_barcodes_with_scraping():
         ws = wb.active
         
         # Get headers from first row
-        headers = [cell.value for cell in ws[1]]
+        headers = [str(cell.value).strip().lower() if cell.value else '' for cell in ws[1]]
         
-        # Check if barcode column exists
-        if 'barcode' not in headers:
+        # Check if barcode column exists (case insensitive)
+        barcode_col_index = None
+        for i, header in enumerate(headers):
+            if 'barcode' in header.lower():
+                barcode_col_index = i + 1  # Excel columns are 1-indexed
+                break
+        
+        if barcode_col_index is None:
             return jsonify({'error': 'Excel file must contain a "barcode" column'}), 400
+        
+        print(f"Found barcode column at index {barcode_col_index}")
         
         # Process barcodes
         processed_count = 0
@@ -2297,19 +2305,29 @@ def import_barcodes_with_scraping():
         errors = []
         
         print(f"Starting barcode import to unfound list...")
+        print(f"Total rows to process: {ws.max_row - 1}")
+        print(f"Headers found: {headers}")
         
         for row_num in range(2, ws.max_row + 1):
             try:
-                row_data = {}
-                for col_num, header in enumerate(headers, 1):
-                    cell_value = ws.cell(row=row_num, column=col_num).value
-                    row_data[header] = cell_value
+                # Get barcode value directly from the barcode column
+                barcode_cell = ws.cell(row=row_num, column=barcode_col_index)
+                barcode_value = barcode_cell.value
                 
-                barcode = str(row_data['barcode']).strip()
-                if not barcode or barcode == 'None':
+                # Handle different data types (string, int, float)
+                if barcode_value is None:
+                    print(f"Row {row_num}: Empty barcode cell, skipping")
                     continue
                 
-                print(f"Processing barcode: {barcode}")
+                # Convert to string and clean up
+                barcode = str(barcode_value).strip()
+                if not barcode or barcode.lower() in ['none', 'null', '']:
+                    continue
+                
+                # Remove any non-numeric characters if needed (optional)
+                # barcode = ''.join(filter(str.isdigit, barcode))
+                
+                print(f"Processing barcode: {barcode} (row {row_num})")
                 
                 # Check if barcode already exists in barcode_cache (successfully scraped)
                 existing_doc = db.collection('barcode_cache').document(barcode).get()
