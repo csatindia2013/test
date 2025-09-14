@@ -2321,8 +2321,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             <div><strong>Processed:</strong> ${result.processed_count} barcodes</div>
                             <div><strong>Added to Unfound:</strong> ${result.added_to_unfound_count} barcodes</div>
                             <div><strong>Skipped:</strong> ${result.skipped_count} existing</div>
+                            ${result.skipped_already_scraped > 0 ? 
+                                `<div class="text-info"><strong>Already Scraped:</strong> ${result.skipped_already_scraped} barcodes (in products)</div>` : 
+                                ''
+                            }
+                            ${result.skipped_already_unfound > 0 ? 
+                                `<div class="text-warning"><strong>Already Unfound:</strong> ${result.skipped_already_unfound} barcodes (updated)</div>` : 
+                                ''
+                            }
                             ${result.errors && result.errors.length > 0 ? 
-                                `<div class="text-warning"><strong>Errors:</strong> ${result.errors.length}</div>` : 
+                                `<div class="text-danger"><strong>Errors:</strong> ${result.errors.length}</div>` : 
                                 '<div class="text-success"><strong>No errors</strong></div>'
                             }
                         </div>
@@ -3023,8 +3031,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             <div><strong>Processed:</strong> ${result.processed_count} barcodes</div>
                             <div><strong>Added to Unfound:</strong> ${result.added_to_unfound_count} barcodes</div>
                             <div><strong>Skipped:</strong> ${result.skipped_count} existing</div>
+                            ${result.skipped_already_scraped > 0 ? 
+                                `<div class="text-info"><strong>Already Scraped:</strong> ${result.skipped_already_scraped} barcodes (in products)</div>` : 
+                                ''
+                            }
+                            ${result.skipped_already_unfound > 0 ? 
+                                `<div class="text-warning"><strong>Already Unfound:</strong> ${result.skipped_already_unfound} barcodes (updated)</div>` : 
+                                ''
+                            }
                             ${result.errors && result.errors.length > 0 ? 
-                                `<div class="text-warning"><strong>Errors:</strong> ${result.errors.length}</div>` : 
+                                `<div class="text-danger"><strong>Errors:</strong> ${result.errors.length}</div>` : 
                                 '<div class="text-success"><strong>No errors</strong></div>'
                             }
                         </div>

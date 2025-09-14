@@ -2302,6 +2302,8 @@ def import_barcodes_with_scraping():
         processed_count = 0
         added_to_unfound_count = 0
         skipped_count = 0
+        skipped_already_scraped = 0
+        skipped_already_unfound = 0
         errors = []
         
         print(f"Starting barcode import to unfound list...")
@@ -2334,6 +2336,7 @@ def import_barcodes_with_scraping():
                 if existing_doc.exists:
                     print(f"Barcode {barcode} already exists in barcode_cache (successfully scraped), skipping")
                     skipped_count += 1
+                    skipped_already_scraped += 1
                     continue
                 
                 # Check if barcode already exists in unfound_barcodes and update it instead of skipping
@@ -2379,6 +2382,8 @@ def import_barcodes_with_scraping():
             'processed_count': processed_count,
             'added_to_unfound_count': added_to_unfound_count,
             'skipped_count': skipped_count,
+            'skipped_already_scraped': skipped_already_scraped,
+            'skipped_already_unfound': skipped_already_unfound,
             'errors': errors[:10] if errors else []
         }
         
