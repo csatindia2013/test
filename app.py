@@ -49,6 +49,36 @@ processing_status = {
 }
 processed_barcodes_history = []
 
+# Initialize Firebase globally
+def init_firebase_global():
+    global db, firebase_status
+    try:
+        print("Initializing Firebase globally...")
+        try:
+            existing_app = firebase_admin.get_app()
+            print("Firebase app already initialized")
+        except ValueError:
+            print("Loading service account file...")
+            cred = credentials.Certificate('firebase-service-account.json')
+            firebase_admin.initialize_app(cred)
+            print("Firebase app initialized with service account")
+        
+        db = firestore.client()
+        firebase_status = "connected"
+        print("Firebase connection established successfully")
+        return True
+        
+    except Exception as e:
+        print(f"Failed to initialize Firebase: {e}")
+        import traceback
+        traceback.print_exc()
+        firebase_status = "disconnected"
+        db = None
+        return False
+
+# Call the initialization function
+init_firebase_global()
+
 # User class for Flask-Login
 class User(UserMixin):
     def __init__(self, id, username, role='admin'):
@@ -96,7 +126,7 @@ def create_app(config_name=None):
     )
     
     # Initialize Firebase
-    init_firebase(app)
+    # Firebase is now initialized globally, no need to initialize here
     
     # Register blueprints/routes
     register_routes(app, limiter)
@@ -111,52 +141,26 @@ def init_firebase(app):
     global db, firebase_status
     
     try:
-        app.logger.info("Initializing Firebase...")
+        print("Initializing Firebase...")
         
-        # Check if Firebase is already initialized
+        # Simple initialization - just use the service account file
         try:
-            firebase_admin.get_app()
-            app.logger.info("Firebase app already initialized")
+            existing_app = firebase_admin.get_app()
+            print("Firebase app already initialized, using existing app")
         except ValueError:
-            # Firebase not initialized, proceed with initialization
-            try:
-                app.logger.info("Loading service account file...")
-                cred = credentials.Certificate('firebase-service-account.json')
-                firebase_admin.initialize_app(cred)
-                app.logger.info("Firebase app initialized with service account")
-            except Exception as e:
-                app.logger.warning(f"Service account file failed: {e}")
-                try:
-                    firebase_config = {
-                        "type": "service_account",
-                        "project_id": app.config['FIREBASE_PROJECT_ID'],
-                        "private_key_id": app.config['FIREBASE_PRIVATE_KEY_ID'],
-                        "private_key": app.config['FIREBASE_PRIVATE_KEY'],
-                        "client_email": app.config['FIREBASE_CLIENT_EMAIL'],
-                        "client_id": app.config['FIREBASE_CLIENT_ID'],
-                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                        "token_uri": "https://oauth2.googleapis.com/token",
-                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                        "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{app.config['FIREBASE_CLIENT_EMAIL']}"
-                    }
-                    if all(firebase_config.values()):
-                        cred = credentials.Certificate(firebase_config)
-                        firebase_admin.initialize_app(cred)
-                        app.logger.info("Firebase app initialized with environment variables")
-                    else:
-                        raise Exception("Missing Firebase environment variables")
-                except Exception as e2:
-                    app.logger.warning(f"Environment variables failed: {e2}")
-                    app.logger.info("Trying Application Default Credentials...")
-                    firebase_admin.initialize_app()
-                    app.logger.info("Firebase app initialized with default credentials")
+            print("Loading service account file...")
+            cred = credentials.Certificate('firebase-service-account.json')
+            firebase_admin.initialize_app(cred)
+            print("Firebase app initialized with service account")
         
         db = firestore.client()
         firebase_status = "connected"
-        app.logger.info("Firebase connection established successfully")
+        print("Firebase connection established successfully")
         
     except Exception as e:
-        app.logger.error(f"Failed to initialize Firebase: {e}")
+        print(f"Failed to initialize Firebase: {e}")
+        import traceback
+        traceback.print_exc()
         firebase_status = "disconnected"
         db = None
 
@@ -173,6 +177,62 @@ def register_routes(app, limiter):
             'firebase_status': firebase_status,
             'version': '1.0.0'
         })
+    
+    # Test Firebase connection endpoint
+    @app.route('/api/test-firebase', methods=['GET'])
+    def test_firebase():
+        """Test Firebase connection and list collections"""
+        try:
+            if not db:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Database not available',
+                    'firebase_status': firebase_status
+                })
+            
+            # Try to get collections
+            collections = list(db.collections())
+            collection_names = [c.id for c in collections]
+            
+            # Try to get a sample document from barcode_cache
+            barcode_cache_ref = db.collection('barcode_cache')
+            sample_docs = list(barcode_cache_ref.limit(1).stream())
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Firebase connection working',
+                'firebase_status': firebase_status,
+                'collections': collection_names,
+                'barcode_cache_sample_count': len(sample_docs),
+                'sample_doc': sample_docs[0].to_dict() if sample_docs else None
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': f'Firebase test failed: {str(e)}',
+                'firebase_status': firebase_status
+            })
+    
+    # Test products endpoint without authentication
+    @app.route('/api/test-products', methods=['GET'])
+    def test_products():
+        """Test products endpoint without authentication"""
+        try:
+            products = ProductService.get_products()
+            return jsonify({
+                'status': 'success',
+                'message': 'Products retrieved successfully',
+                'firebase_status': firebase_status,
+                'products_count': len(products) if isinstance(products, list) else 0,
+                'products': products[:5] if isinstance(products, list) else products  # Return first 5 products
+            })
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': f'Products test failed: {str(e)}',
+                'firebase_status': firebase_status
+            })
     
     # Authentication Routes
     @app.route('/login', methods=['GET', 'POST'])
@@ -441,18 +501,26 @@ except Exception as e:
 class ProductService:
     @staticmethod
     def get_products():
+        print(f"ProductService.get_products() called - Firebase status: {firebase_status}")
+        print(f"Database object: {db}")
+        
         if not db:
+            print("Database not available, returning error")
             return {"error": "Database not available", "status": firebase_status}
         
         try:
-            print("Getting products from Firebase...")
+            print("Getting products from Firebase barcode_cache collection...")
             products_ref = db.collection('barcode_cache')
             docs = products_ref.stream()
             
             products = []
+            doc_count = 0
             for doc in docs:
+                doc_count += 1
                 product_data = doc.to_dict()
                 product_data['id'] = doc.id
+                
+                print(f"Processing document {doc_count}: {doc.id}")
                 
                 # Map Firebase fields to expected dashboard fields
                 mapped_product = {
@@ -481,10 +549,21 @@ class ProductService:
                 }
                 products.append(mapped_product)
             
-            print(f"Retrieved {len(products)} products from Firebase")
+            print(f"Retrieved {len(products)} products from Firebase barcode_cache collection")
+            if len(products) == 0:
+                print("No products found in barcode_cache collection")
+                # Try to check if the collection exists by attempting to get collection info
+                try:
+                    collections = db.collections()
+                    print(f"Available collections: {[c.id for c in collections]}")
+                except Exception as e:
+                    print(f"Error getting collections: {e}")
+            
             return products
         except Exception as e:
             print(f"Error getting products: {e}")
+            import traceback
+            traceback.print_exc()
             return {"error": str(e), "status": "error"}
 
     @staticmethod
