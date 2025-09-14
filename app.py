@@ -5,9 +5,8 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 import traceback
-import pandas as pd
 import openpyxl
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from io import BytesIO
 import os
 import requests
@@ -457,18 +456,25 @@ def export_products():
             # Use mock data if Firebase not available
             products = MOCK_PRODUCTS
         
-        # Create DataFrame
-        df = pd.DataFrame(products)
-        
-        # Reorder columns for better readability
-        column_order = ['id', 'name', 'category', 'mrp', 'price', 'useInFirstStart', 'imageUrl', 'stockQuantity']
-        df = df.reindex(columns=column_order)
-        
-        # Create Excel file in memory
+        # Create Excel file in memory using openpyxl
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Products', index=False)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Products"
         
+        # Define column order
+        column_order = ['id', 'name', 'category', 'mrp', 'price', 'useInFirstStart', 'imageUrl', 'stockQuantity']
+        
+        # Add headers
+        for col, header in enumerate(column_order, 1):
+            ws.cell(row=1, column=col, value=header)
+        
+        # Add data
+        for row, product in enumerate(products, 2):
+            for col, header in enumerate(column_order, 1):
+                ws.cell(row=row, column=col, value=product.get(header, ''))
+        
+        wb.save(output)
         output.seek(0)
         
         # Generate filename with timestamp
@@ -499,18 +505,25 @@ def export_categories():
             # Use mock data if Firebase not available
             categories = MOCK_CATEGORIES
         
-        # Create DataFrame
-        df = pd.DataFrame(categories)
-        
-        # Reorder columns for better readability
-        column_order = ['id', 'name', 'description', 'isActive']
-        df = df.reindex(columns=column_order)
-        
-        # Create Excel file in memory
+        # Create Excel file in memory using openpyxl
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Categories', index=False)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Categories"
         
+        # Define column order
+        column_order = ['id', 'name', 'description', 'isActive']
+        
+        # Add headers
+        for col, header in enumerate(column_order, 1):
+            ws.cell(row=1, column=col, value=header)
+        
+        # Add data
+        for row, category in enumerate(categories, 2):
+            for col, header in enumerate(column_order, 1):
+                ws.cell(row=row, column=col, value=category.get(header, ''))
+        
+        wb.save(output)
         output.seek(0)
         
         # Generate filename with timestamp
@@ -540,12 +553,16 @@ def import_products():
         if not file.filename.endswith(('.xlsx', '.xls')):
             return jsonify({'error': 'File must be an Excel file (.xlsx or .xls)'}), 400
         
-        # Read Excel file
-        df = pd.read_excel(file)
+        # Read Excel file using openpyxl
+        wb = load_workbook(file)
+        ws = wb.active
+        
+        # Get headers from first row
+        headers = [cell.value for cell in ws[1]]
         
         # Validate required columns
         required_columns = ['name', 'category', 'mrp', 'price']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        missing_columns = [col for col in required_columns if col not in headers]
         if missing_columns:
             return jsonify({'error': f'Missing required columns: {", ".join(missing_columns)}'}), 400
         
@@ -553,16 +570,25 @@ def import_products():
         imported_count = 0
         errors = []
         
-        for index, row in df.iterrows():
+        for row_num in range(2, ws.max_row + 1):
             try:
+                row_data = {}
+                for col_num, header in enumerate(headers, 1):
+                    cell_value = ws.cell(row=row_num, column=col_num).value
+                    row_data[header] = cell_value
+                
+                # Helper function to check if value is not None/empty
+                def is_not_empty(value):
+                    return value is not None and str(value).strip() != ''
+                
                 product_data = {
-                    'name': str(row['name']),
-                    'category': str(row['category']),
-                    'mrp': float(row['mrp']) if pd.notna(row['mrp']) else 0.0,
-                    'price': float(row['price']) if pd.notna(row['price']) else 0.0,
-                    'useInFirstStart': bool(row.get('useInFirstStart', False)) if pd.notna(row.get('useInFirstStart')) else False,
-                    'imageUrl': str(row.get('imageUrl', '')) if pd.notna(row.get('imageUrl')) else '',
-                    'stockQuantity': int(row.get('stockQuantity', 0)) if pd.notna(row.get('stockQuantity')) else 0
+                    'name': str(row_data['name']),
+                    'category': str(row_data['category']),
+                    'mrp': float(row_data['mrp']) if is_not_empty(row_data['mrp']) else 0.0,
+                    'price': float(row_data['price']) if is_not_empty(row_data['price']) else 0.0,
+                    'useInFirstStart': bool(row_data.get('useInFirstStart', False)) if is_not_empty(row_data.get('useInFirstStart')) else False,
+                    'imageUrl': str(row_data.get('imageUrl', '')) if is_not_empty(row_data.get('imageUrl')) else '',
+                    'stockQuantity': int(row_data.get('stockQuantity', 0)) if is_not_empty(row_data.get('stockQuantity')) else 0
                 }
                 
                 if db:
@@ -605,12 +631,16 @@ def import_categories():
         if not file.filename.endswith(('.xlsx', '.xls')):
             return jsonify({'error': 'File must be an Excel file (.xlsx or .xls)'}), 400
         
-        # Read Excel file
-        df = pd.read_excel(file)
+        # Read Excel file using openpyxl
+        wb = load_workbook(file)
+        ws = wb.active
+        
+        # Get headers from first row
+        headers = [cell.value for cell in ws[1]]
         
         # Validate required columns
         required_columns = ['name']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        missing_columns = [col for col in required_columns if col not in headers]
         if missing_columns:
             return jsonify({'error': f'Missing required columns: {", ".join(missing_columns)}'}), 400
         
@@ -618,12 +648,21 @@ def import_categories():
         imported_count = 0
         errors = []
         
-        for index, row in df.iterrows():
+        for row_num in range(2, ws.max_row + 1):
             try:
+                row_data = {}
+                for col_num, header in enumerate(headers, 1):
+                    cell_value = ws.cell(row=row_num, column=col_num).value
+                    row_data[header] = cell_value
+                
+                # Helper function to check if value is not None/empty
+                def is_not_empty(value):
+                    return value is not None and str(value).strip() != ''
+                
                 category_data = {
-                    'name': str(row['name']),
-                    'description': str(row.get('description', '')) if pd.notna(row.get('description')) else '',
-                    'isActive': bool(row.get('isActive', True)) if pd.notna(row.get('isActive')) else True
+                    'name': str(row_data['name']),
+                    'description': str(row_data.get('description', '')) if is_not_empty(row_data.get('description')) else '',
+                    'isActive': bool(row_data.get('isActive', True)) if is_not_empty(row_data.get('isActive')) else True
                 }
                 
                 if db:
@@ -780,18 +819,25 @@ def export_unfound_barcodes():
             # Use mock data if Firebase not available
             unfound_barcodes = MOCK_UNFOUND_BARCODES
         
-        # Create DataFrame
-        df = pd.DataFrame(unfound_barcodes)
-        
-        # Reorder columns for better readability
-        column_order = ['id', 'barcode', 'timestamp', 'deviceId', 'location']
-        df = df.reindex(columns=column_order)
-        
-        # Create Excel file in memory
+        # Create Excel file in memory using openpyxl
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Unfound Barcodes', index=False)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Unfound Barcodes"
         
+        # Define column order
+        column_order = ['id', 'barcode', 'timestamp', 'deviceId', 'location']
+        
+        # Add headers
+        for col, header in enumerate(column_order, 1):
+            ws.cell(row=1, column=col, value=header)
+        
+        # Add data
+        for row, barcode_data in enumerate(unfound_barcodes, 2):
+            for col, header in enumerate(column_order, 1):
+                ws.cell(row=row, column=col, value=barcode_data.get(header, ''))
+        
+        wb.save(output)
         output.seek(0)
         
         # Generate filename with timestamp
