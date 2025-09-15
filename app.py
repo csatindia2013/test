@@ -219,13 +219,41 @@ def register_routes(app, limiter):
     def test_products():
         """Test products endpoint without authentication"""
         try:
-            products = ProductService.get_products()
+            # Check both collections
+            barcode_cache_products = []
+            products_collection_products = []
+            
+            if db:
+                # Check barcode_cache collection
+                try:
+                    barcode_cache_ref = db.collection('barcode_cache')
+                    barcode_cache_docs = barcode_cache_ref.stream()
+                    for doc in barcode_cache_docs:
+                        product_data = doc.to_dict()
+                        product_data['id'] = doc.id
+                        barcode_cache_products.append(product_data)
+                except Exception as e:
+                    print(f"Error getting barcode_cache: {e}")
+                
+                # Check products collection
+                try:
+                    products_ref = db.collection('products')
+                    products_docs = products_ref.stream()
+                    for doc in products_docs:
+                        product_data = doc.to_dict()
+                        product_data['id'] = doc.id
+                        products_collection_products.append(product_data)
+                except Exception as e:
+                    print(f"Error getting products: {e}")
+            
             return jsonify({
                 'status': 'success',
                 'message': 'Products retrieved successfully',
                 'firebase_status': firebase_status,
-                'products_count': len(products) if isinstance(products, list) else 0,
-                'products': products[:5] if isinstance(products, list) else products  # Return first 5 products
+                'barcode_cache_count': len(barcode_cache_products),
+                'products_collection_count': len(products_collection_products),
+                'barcode_cache_products': barcode_cache_products[:3],  # First 3
+                'products_collection_products': products_collection_products[:3]  # First 3
             })
         except Exception as e:
             return jsonify({
@@ -1449,6 +1477,64 @@ def get_recently_added_products():
             'message': f'Failed to get recently added products: {str(e)}'
         }), 500
 
+@app.route('/api/debug-verify', methods=['POST'])
+def debug_verify():
+    """Debug verification function"""
+    try:
+        data = request.get_json()
+        product_ids = data.get('productIds', [])
+        
+        print(f"DEBUG: Received product IDs: {product_ids}", flush=True)
+        
+        if not db:
+            print("DEBUG: Database not available", flush=True)
+            return jsonify({'status': 'error', 'message': 'Database not available'}), 500
+        
+        print("DEBUG: Database is available", flush=True)
+        
+        # Test with first product ID
+        if product_ids:
+            product_id = product_ids[0]
+            print(f"DEBUG: Testing with product ID: {product_id}", flush=True)
+            
+            product_doc = db.collection('recently_added_products').document(product_id).get()
+            print(f"DEBUG: Product document exists: {product_doc.exists}", flush=True)
+            
+            if product_doc.exists:
+                product_data = product_doc.to_dict()
+                print(f"DEBUG: Product data keys: {list(product_data.keys())}", flush=True)
+                print(f"DEBUG: Barcode: {product_data.get('barcode')}", flush=True)
+                
+                barcode = product_data.get('barcode')
+                if barcode:
+                    existing_product = db.collection('products').document(barcode).get()
+                    print(f"DEBUG: Product exists in products collection: {existing_product.exists}", flush=True)
+                    
+                    # Try to manually add the product
+                    test_product_data = {
+                        'barcode': barcode,
+                        'name': product_data.get('productName', 'Test Product'),
+                        'price': 'N/A',
+                        'image': None,
+                        'source': 'debug_test',
+                        'verified': True,
+                        'verifiedAt': datetime.now().isoformat(),
+                        'createdAt': datetime.now().isoformat()
+                    }
+                    
+                    print(f"DEBUG: Attempting to add test product to barcode_cache: {test_product_data}", flush=True)
+                    db.collection('barcode_cache').document(barcode).set(test_product_data)
+                    print(f"DEBUG: Test product added to barcode_cache successfully", flush=True)
+                    
+                    # Verify it was added
+                    added_product = db.collection('barcode_cache').document(barcode).get()
+                    print(f"DEBUG: Verification - product exists in barcode_cache after adding: {added_product.exists}", flush=True)
+        
+        return jsonify({'status': 'success', 'message': 'Debug completed'})
+    except Exception as e:
+        print(f"DEBUG: Error in debug function: {e}", flush=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/recently-added-products/verify', methods=['POST'])
 def verify_recently_added_products():
     """Mark recently added products as verified and move them to main products collection"""
@@ -1473,25 +1559,32 @@ def verify_recently_added_products():
         
         for product_id in product_ids:
             try:
+                print(f"DEBUG: Processing verification for product_id: {product_id}", flush=True)
+                
                 # Get the product data from recently_added_products
                 product_doc = db.collection('recently_added_products').document(product_id).get()
                 
                 if not product_doc.exists:
-                    print(f"Product {product_id} not found in recently_added_products")
+                    print(f"DEBUG: Product {product_id} not found in recently_added_products")
                     continue
                 
                 product_data = product_doc.to_dict()
                 barcode = product_data.get('barcode')
                 
+                print(f"DEBUG: Product data: {product_data}")
+                print(f"DEBUG: Barcode: {barcode}")
+                
                 if not barcode:
-                    print(f"No barcode found for product {product_id}")
+                    print(f"DEBUG: No barcode found for product {product_id}")
                     continue
                 
-                # Check if product already exists in main products collection
-                existing_product = db.collection('products').document(barcode).get()
+                # Check if product already exists in barcode_cache collection (where main app looks for products)
+                existing_product = db.collection('barcode_cache').document(barcode).get()
+                
+                print(f"DEBUG: Checking if product {barcode} exists in barcode_cache collection: {existing_product.exists}")
                 
                 if existing_product.exists:
-                    print(f"Product with barcode {barcode} already exists in products collection")
+                    print(f"DEBUG: Product with barcode {barcode} already exists in barcode_cache collection")
                     # Just mark as verified
                     db.collection('recently_added_products').document(product_id).update({
                         'verified': True,
@@ -1503,12 +1596,15 @@ def verify_recently_added_products():
                 # Get scraped data if available
                 scraped_data = product_data.get('scrapedData', {})
                 
-                # Create product data for main products collection
-                main_product_data = {
+                # Create product data for barcode_cache collection (where main app looks for products)
+                barcode_cache_data = {
                     'barcode': barcode,
                     'name': product_data.get('productName', scraped_data.get('name', 'Unknown')),
                     'price': product_data.get('price', scraped_data.get('price', 'N/A')),
                     'image': product_data.get('image', scraped_data.get('image')),
+                    'brand': '',  # Default empty brand
+                    'category': '',  # Default empty category
+                    'description': '',  # Default empty description
                     'source': 'background_processor_verified',
                     'verified': True,
                     'verifiedAt': datetime.now().isoformat(),
@@ -1518,9 +1614,11 @@ def verify_recently_added_products():
                     'scrapedAt': scraped_data.get('scrapedAt', product_data.get('addedAt'))
                 }
                 
-                # Add to main products collection
-                db.collection('products').document(barcode).set(main_product_data)
+                # Add to barcode_cache collection (where main app looks for products)
+                print(f"DEBUG: Adding product to barcode_cache collection: {barcode_cache_data}")
+                db.collection('barcode_cache').document(barcode).set(barcode_cache_data)
                 moved_to_products_count += 1
+                print(f"DEBUG: Successfully added product {barcode} to barcode_cache collection")
                 
                 # Mark as verified in recently_added_products
                 db.collection('recently_added_products').document(product_id).update({
@@ -1531,7 +1629,7 @@ def verify_recently_added_products():
                 })
                 verified_count += 1
                 
-                print(f"✅ Verified and moved product {barcode} to main products collection")
+                print(f"✅ Verified and moved product {barcode} to barcode_cache collection")
                 
             except Exception as e:
                 print(f"Error verifying product {product_id}: {e}")
@@ -1539,7 +1637,7 @@ def verify_recently_added_products():
         
         return jsonify({
             'status': 'success',
-            'message': f'Successfully verified {verified_count} products, moved {moved_to_products_count} to main products collection',
+            'message': f'Successfully verified {verified_count} products, moved {moved_to_products_count} to barcode_cache collection',
             'verifiedCount': verified_count,
             'movedToProductsCount': moved_to_products_count
         })
