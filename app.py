@@ -1627,8 +1627,11 @@ def process_unfound_barcodes_background():
                 if len(processed_barcodes_history) > 100:
                     processed_barcodes_history = processed_barcodes_history[-100:]
                 
-                # Add delay between requests to avoid being blocked
-                time.sleep(5)
+                # Add human-like delay between requests to avoid being blocked
+                import random
+                delay = random.uniform(8, 15)  # Random delay between 8-15 seconds
+                print(f"DEBUG: Waiting {delay:.1f} seconds before next barcode (human-like delay)...")
+                time.sleep(delay)
                 
             except Exception as e:
                 processing_status['error_count'] += 1
@@ -1680,6 +1683,21 @@ def fetch_product_data_internal(barcode, url):
         # Navigate to URL
         driver.get(url)
         
+        # Human-like delay after page load
+        import random
+        delay = random.uniform(1.5, 3)  # Random delay between 1.5-3 seconds
+        print(f"DEBUG: Background processor - Waiting {delay:.1f} seconds (human-like delay)...")
+        time.sleep(delay)
+        
+        # Simulate human-like behavior
+        try:
+            # Random scroll to simulate human reading
+            scroll_amount = random.randint(50, 200)
+            driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+            time.sleep(random.uniform(0.3, 0.8))
+        except Exception as e:
+            print(f"DEBUG: Background processor - Error in human-like simulation: {e}")
+        
         # Wait for page to load
         wait = WebDriverWait(driver, 10)
         try:
@@ -1698,7 +1716,7 @@ def fetch_product_data_internal(barcode, url):
         if product_data and (product_data.get('name') != 'N/A' or product_data.get('price') != 'N/A'):
             return {'success': True, 'product': product_data}
         else:
-            return {'success': False, 'product': product_data}
+            return {'success': False, 'product': create_empty_product_data(barcode)}
             
     except Exception as e:
         print(f"DEBUG: Background processor - Error fetching {barcode}: {e}")
@@ -1919,6 +1937,25 @@ def fetch_product_data():
             print("DEBUG: Navigating to URL...")
             driver.get(url)
             
+            # Human-like delay after page load
+            import random
+            delay = random.uniform(2, 4)  # Random delay between 2-4 seconds
+            print(f"DEBUG: Waiting {delay:.1f} seconds (human-like delay)...")
+            time.sleep(delay)
+            
+            # Simulate human-like behavior
+            try:
+                # Random scroll to simulate human reading
+                scroll_amount = random.randint(100, 500)
+                driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+                time.sleep(random.uniform(0.5, 1.5))
+                
+                # Scroll back up
+                driver.execute_script(f"window.scrollBy(0, -{scroll_amount//2});")
+                time.sleep(random.uniform(0.3, 0.8))
+            except Exception as e:
+                print(f"DEBUG: Error in human-like simulation: {e}")
+            
             # Wait for the page to load and look for product data
             wait = WebDriverWait(driver, 15)
             
@@ -1963,12 +2000,12 @@ def fetch_product_data():
                     'product': product_data
                 }), 200
             else:
-                print("DEBUG: No product data found")
+                print("DEBUG: No product data found or error page detected")
                 return jsonify({
                     'success': False,
                     'status': 'not_found',
                     'message': 'Product information not found on Smart Consumer website',
-                    'product': product_data
+                    'product': create_empty_product_data(barcode)
                 }), 200
                 
         except WebDriverException as e:
@@ -2012,6 +2049,34 @@ def extract_product_data_selenium(driver, soup, barcode):
     try:
         product_data = create_empty_product_data(barcode)
         
+        # Check if we're on an error page first
+        current_url = driver.current_url
+        page_title = driver.title
+        
+        # Check for 404 or error pages
+        if ('404' in current_url or 
+            'error' in current_url.lower() or 
+            'not-found' in current_url.lower() or
+            'error' in page_title.lower()):
+            print(f"DEBUG: Detected error page - URL: {current_url}, Title: {page_title}")
+            return None
+        
+        # Check for common error messages in page content
+        error_messages = [
+            "string indices must be integers, not 'str'",
+            "not found",
+            "error",
+            "page not found",
+            "product not found",
+            "invalid barcode"
+        ]
+        
+        page_text = driver.page_source.lower()
+        for error_msg in error_messages:
+            if error_msg.lower() in page_text:
+                print(f"DEBUG: Detected error message in page: '{error_msg}'")
+                return None
+        
         # Try to extract product name using multiple strategies
         try:
             # Strategy 1: Look for product name in various selectors
@@ -2030,7 +2095,12 @@ def extract_product_data_selenium(driver, soup, barcode):
                 try:
                     element = driver.find_element(By.CSS_SELECTOR, selector)
                     if element and element.text.strip():
-                        product_data['name'] = element.text.strip()
+                        name_text = element.text.strip()
+                        # Check if the extracted text is an error message
+                        if any(error_msg.lower() in name_text.lower() for error_msg in error_messages):
+                            print(f"DEBUG: Skipping error message as product name: '{name_text}'")
+                            continue
+                        product_data['name'] = name_text
                         print(f"DEBUG: Found product name using selector '{selector}': {product_data['name']}")
                         break
                 except NoSuchElementException:
