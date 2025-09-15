@@ -665,7 +665,15 @@ class ProductService:
             return {"error": "Database not available", "status": firebase_status}
         
         try:
-            db.collection('products').document(product_id).delete()
+            # Delete from barcode_cache collection (where main app reads from)
+            db.collection('barcode_cache').document(product_id).delete()
+            
+            # Also try to delete from products collection if it exists there
+            try:
+                db.collection('products').document(product_id).delete()
+            except:
+                pass  # Ignore if not found in products collection
+            
             return {"message": "Product deleted successfully"}
         except Exception as e:
             return {"error": str(e)}
@@ -784,11 +792,19 @@ def bulk_delete_products():
             return jsonify({'error': 'Product IDs must be a non-empty list'}), 400
         
         if db:
-            # Delete products from Firebase
+            # Delete products from Firebase (both barcode_cache and products collections)
             deleted_count = 0
             for product_id in product_ids:
                 try:
-                    db.collection('products').document(product_id).delete()
+                    # Delete from barcode_cache collection (where main app reads from)
+                    db.collection('barcode_cache').document(product_id).delete()
+                    
+                    # Also try to delete from products collection if it exists there
+                    try:
+                        db.collection('products').document(product_id).delete()
+                    except:
+                        pass  # Ignore if not found in products collection
+                    
                     deleted_count += 1
                 except Exception as e:
                     print(f"Error deleting product {product_id}: {e}")
@@ -1504,6 +1520,7 @@ def migrate_products_to_barcode_cache():
                         'barcode': barcode,
                         'name': product_data.get('name', 'Unknown'),
                         'price': product_data.get('price', 'N/A'),
+                        'mrp': product_data.get('mrp', product_data.get('price', 'N/A')),
                         'image': product_data.get('image'),
                         'brand': product_data.get('brand', ''),
                         'category': product_data.get('category', ''),
@@ -1653,10 +1670,11 @@ def verify_recently_added_products():
                     'barcode': barcode,
                     'name': product_data.get('productName', scraped_data.get('name', 'Unknown')),
                     'price': product_data.get('price', scraped_data.get('price', 'N/A')),
+                    'mrp': product_data.get('mrp', scraped_data.get('mrp', product_data.get('price', 'N/A'))),
                     'image': product_data.get('image', scraped_data.get('image')),
-                    'brand': '',  # Default empty brand
-                    'category': '',  # Default empty category
-                    'description': '',  # Default empty description
+                    'brand': product_data.get('brand', scraped_data.get('brand', '')),
+                    'category': product_data.get('category', scraped_data.get('category', '')),
+                    'description': product_data.get('description', scraped_data.get('description', '')),
                     'source': 'background_processor_verified',
                     'verified': True,
                     'verifiedAt': datetime.now().isoformat(),
@@ -1693,6 +1711,62 @@ def verify_recently_added_products():
             'status': 'error',
             'message': f'Failed to verify products: {str(e)}'
         }), 500
+
+@app.route('/api/recently-added-products/update-fields', methods=['POST'])
+def update_recently_added_products_fields():
+    """Update existing recently added products with new fields (MRP, brand, category, description)"""
+    try:
+        if not db:
+            return jsonify({'status': 'error', 'message': 'Database not available'}), 500
+        
+        updated_count = 0
+        
+        # Get all recently added products
+        recently_added_ref = db.collection('recently_added_products')
+        docs = recently_added_ref.stream()
+        
+        for doc in docs:
+            try:
+                product_data = doc.to_dict()
+                
+                # Check if MRP field is missing (indicating old format)
+                if 'mrp' not in product_data:
+                    # Update with new fields
+                    update_data = {
+                        'mrp': product_data.get('price', 'N/A'),  # Use price as MRP if not available
+                        'brand': product_data.get('brand', ''),
+                        'category': product_data.get('category', ''),
+                        'description': product_data.get('description', ''),
+                        'updatedAt': datetime.now().isoformat()
+                    }
+                    
+                    # Update scrapedData as well
+                    scraped_data = product_data.get('scrapedData', {})
+                    if scraped_data:
+                        scraped_data.update({
+                            'mrp': product_data.get('price', 'N/A'),
+                            'brand': product_data.get('brand', ''),
+                            'category': product_data.get('category', ''),
+                            'description': product_data.get('description', '')
+                        })
+                        update_data['scrapedData'] = scraped_data
+                    
+                    # Update the document
+                    db.collection('recently_added_products').document(doc.id).update(update_data)
+                    updated_count += 1
+                    print(f"Updated recently added product {doc.id} with new fields")
+                    
+            except Exception as e:
+                print(f"Error updating product {doc.id}: {e}")
+                continue
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully updated {updated_count} recently added products with new fields',
+            'updatedCount': updated_count
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/recently-added-products/clear', methods=['POST'])
 def clear_recently_added_products():
@@ -1812,7 +1886,11 @@ def process_unfound_barcodes_background():
                         'barcode': barcode_data['barcode'],
                         'productName': product_data.get('name', 'Unknown'),
                         'price': product_data.get('price', 'N/A'),
+                        'mrp': product_data.get('mrp', product_data.get('price', 'N/A')),  # Add MRP field
                         'image': product_data.get('image'),
+                        'brand': product_data.get('brand', ''),
+                        'category': product_data.get('category', ''),
+                        'description': product_data.get('description', ''),
                         'addedAt': processed_at,
                         'source': 'background_processor',
                         'originalUnfoundId': barcode_data['id'],
@@ -1820,7 +1898,11 @@ def process_unfound_barcodes_background():
                         'scrapedData': {
                             'name': product_data.get('name', 'Unknown'),
                             'price': product_data.get('price', 'N/A'),
+                            'mrp': product_data.get('mrp', product_data.get('price', 'N/A')),
                             'image': product_data.get('image'),
+                            'brand': product_data.get('brand', ''),
+                            'category': product_data.get('category', ''),
+                            'description': product_data.get('description', ''),
                             'scrapedAt': processed_at
                         }
                     }
