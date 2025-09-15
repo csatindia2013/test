@@ -262,6 +262,52 @@ def register_routes(app, limiter):
                 'firebase_status': firebase_status
             })
     
+    @app.route('/api/test-db-write', methods=['POST'])
+    def test_db_write():
+        """Test database write operations"""
+        try:
+            test_data = {
+                'barcode': 'TEST123456789',
+                'name': 'Test Product',
+                'price': '₹100',
+                'mrp': '₹120',
+                'image': 'https://via.placeholder.com/300x300/cccccc/666666?text=Test',
+                'brand': 'Test Brand',
+                'category': 'Test Category',
+                'description': 'Test Description',
+                'verified': False,
+                'source': 'test',
+                'createdAt': datetime.now().isoformat(),
+                'scrapedAt': datetime.now().isoformat()
+            }
+            
+            print(f"DEBUG: Testing database write with data: {test_data}")
+            db.collection('barcode_cache').document('TEST123456789').set(test_data)
+            print(f"DEBUG: ✅ Successfully wrote test data to barcode_cache")
+            
+            # Verify it was written
+            doc = db.collection('barcode_cache').document('TEST123456789').get()
+            if doc.exists:
+                print(f"DEBUG: ✅ Verified test data exists in database")
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Database write test successful',
+                    'data': doc.to_dict()
+                })
+            else:
+                print(f"DEBUG: ❌ Test data not found in database")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Test data not found after write'
+                })
+                
+        except Exception as e:
+            print(f"DEBUG: ❌ Database write test failed: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Database write test failed: {str(e)}'
+            })
+    
     # Authentication Routes
     @app.route('/login', methods=['GET', 'POST'])
     @limiter.limit("10 per minute")
@@ -2096,12 +2142,24 @@ def process_unfound_barcodes_background():
             else:
                 # Check if it's been more than 24 hours since last retry
                 try:
-                    last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
-                    if (datetime.now(timezone.utc) - last_retry_time).total_seconds() > 86400:  # 24 hours
-                        unfound_barcodes.append(barcode_data)
-                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                    # Handle different datetime formats
+                    if last_retry.endswith('Z'):
+                        last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
                     else:
-                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                        last_retry_time = datetime.fromisoformat(last_retry)
+                    
+                    # Ensure both datetimes are timezone-aware
+                    if last_retry_time.tzinfo is None:
+                        last_retry_time = last_retry_time.replace(tzinfo=timezone.utc)
+                    
+                    current_time = datetime.now(timezone.utc)
+                    time_diff = (current_time - last_retry_time).total_seconds()
+                    
+                    if time_diff > 86400:  # 24 hours
+                        unfound_barcodes.append(barcode_data)
+                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
+                    else:
+                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
                 except Exception as e:
                     print(f"DEBUG: Error parsing lastRetry for {barcode_data['barcode']}: {e}")
                     # If we can't parse the date, include it anyway
@@ -2375,12 +2433,24 @@ def get_unfound_barcodes_for_processing():
             else:
                 # Check if it's been more than 24 hours since last retry
                 try:
-                    last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
-                    if (datetime.now(timezone.utc) - last_retry_time).total_seconds() > 86400:  # 24 hours
-                        unfound_barcodes.append(barcode_data)
-                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                    # Handle different datetime formats
+                    if last_retry.endswith('Z'):
+                        last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
                     else:
-                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                        last_retry_time = datetime.fromisoformat(last_retry)
+                    
+                    # Ensure both datetimes are timezone-aware
+                    if last_retry_time.tzinfo is None:
+                        last_retry_time = last_retry_time.replace(tzinfo=timezone.utc)
+                    
+                    current_time = datetime.now(timezone.utc)
+                    time_diff = (current_time - last_retry_time).total_seconds()
+                    
+                    if time_diff > 86400:  # 24 hours
+                        unfound_barcodes.append(barcode_data)
+                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
+                    else:
+                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
                 except Exception as e:
                     print(f"DEBUG: Error parsing lastRetry for {barcode_data['barcode']}: {e}")
                     # If we can't parse the date, include it anyway
@@ -2406,7 +2476,8 @@ def process_single_barcode(barcode_data):
         time.sleep(delay)
         
         # Try to fetch product data
-        result = fetch_product_data_internal(barcode)
+        url = f"https://smartconsumer-beta.org/{barcode}"
+        result = fetch_product_data_internal(barcode, url)
         
         if result and result.get('status') == 'success':
             product_data = result['product']
@@ -2430,10 +2501,14 @@ def process_single_barcode(barcode_data):
                 'originalUnfoundId': barcode_data['id'],
                 'scrapedAt': datetime.now().isoformat()
             }
+            print(f"DEBUG: Adding to barcode_cache: {barcode_cache_data}")
             db.collection('barcode_cache').document(barcode).set(barcode_cache_data)
+            print(f"DEBUG: ✅ Successfully added {barcode} to barcode_cache")
             
             # Remove from unfound barcodes
+            print(f"DEBUG: Removing {barcode} from unfound_barcodes")
             db.collection('unfound_barcodes').document(barcode_data['id']).delete()
+            print(f"DEBUG: ✅ Successfully removed {barcode} from unfound_barcodes")
             
             print(f"DEBUG: ✅ Successfully processed and moved {barcode} to main database")
             return True
