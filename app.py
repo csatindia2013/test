@@ -1530,6 +1530,7 @@ def migrate_products_to_barcode_cache():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
 @app.route('/api/debug-verify', methods=['POST'])
 def debug_verify():
     """Debug verification function"""
@@ -1638,12 +1639,10 @@ def verify_recently_added_products():
                 
                 if existing_product.exists:
                     print(f"DEBUG: Product with barcode {barcode} already exists in barcode_cache collection")
-                    # Just mark as verified
-                    db.collection('recently_added_products').document(product_id).update({
-                        'verified': True,
-                        'verifiedAt': datetime.now().isoformat()
-                    })
+                    # Remove from recently_added_products since it's already verified and in barcode_cache
+                    db.collection('recently_added_products').document(product_id).delete()
                     verified_count += 1
+                    print(f"✅ Removed verified product {barcode} from recently_added_products collection")
                     continue
                 
                 # Get scraped data if available
@@ -1673,16 +1672,11 @@ def verify_recently_added_products():
                 moved_to_products_count += 1
                 print(f"DEBUG: Successfully added product {barcode} to barcode_cache collection")
                 
-                # Mark as verified in recently_added_products
-                db.collection('recently_added_products').document(product_id).update({
-                    'verified': True,
-                    'verifiedAt': datetime.now().isoformat(),
-                    'movedToProducts': True,
-                    'productsCollectionId': barcode
-                })
+                # Remove from recently_added_products after successful verification and move
+                db.collection('recently_added_products').document(product_id).delete()
                 verified_count += 1
                 
-                print(f"✅ Verified and moved product {barcode} to barcode_cache collection")
+                print(f"✅ Verified, moved product {barcode} to barcode_cache collection, and removed from recently_added_products")
                 
             except Exception as e:
                 print(f"Error verifying product {product_id}: {e}")
@@ -1690,7 +1684,7 @@ def verify_recently_added_products():
         
         return jsonify({
             'status': 'success',
-            'message': f'Successfully verified {verified_count} products, moved {moved_to_products_count} to barcode_cache collection',
+            'message': f'Successfully verified {verified_count} products, moved {moved_to_products_count} to barcode_cache collection, and removed from recently added tab',
             'verifiedCount': verified_count,
             'movedToProductsCount': moved_to_products_count
         })
@@ -2187,6 +2181,10 @@ def fetch_product_data():
             print(f"DEBUG: Waiting {delay:.1f} seconds (human-like delay)...")
             time.sleep(delay)
             
+            # Additional wait for images to load
+            print(f"DEBUG: Waiting additional 3 seconds for images to load...")
+            time.sleep(3)
+            
             # Simulate human-like behavior
             try:
                 # Random scroll to simulate human reading
@@ -2441,8 +2439,30 @@ def extract_product_data_selenium(driver, soup, barcode):
         
         # Try to extract product image URL
         try:
+            print(f"DEBUG: Starting image extraction...")
+            
+            # Scroll to trigger lazy loading
+            print(f"DEBUG: Scrolling to trigger lazy loading...")
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+            time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(1)
+            
+            # First, let's see what images are actually on the page
+            all_img_elements = driver.find_elements(By.TAG_NAME, "img")
+            print(f"DEBUG: Found {len(all_img_elements)} total img elements on the page")
+            
+            for idx, img in enumerate(all_img_elements[:10]):  # Show first 10 images
+                try:
+                    src = img.get_attribute('src')
+                    alt = img.get_attribute('alt')
+                    print(f"DEBUG: Image {idx+1}: src='{src}', alt='{alt}'")
+                except:
+                    pass
+            
             # Enhanced image selectors for better coverage
             img_selectors = [
+                "img",  # Most basic selector - try first
                 "[data-testid*='product-image']",
                 "[data-testid*='image']",
                 ".product-image img",
@@ -2462,29 +2482,65 @@ def extract_product_data_selenium(driver, soup, barcode):
                 "img[class*='featured']",
                 ".image-container img",
                 ".photo-container img",
-                ".img-container img"
+                ".img-container img",
+                "picture img",
+                "figure img"
             ]
             
-            for selector in img_selectors:
+            print(f"DEBUG: Trying {len(img_selectors)} image selectors...")
+            
+            for i, selector in enumerate(img_selectors):
                 try:
-                    element = driver.find_element(By.CSS_SELECTOR, selector)
-                    if element:
-                        img_src = element.get_attribute('src')
-                        if img_src:
-                            # Handle different URL formats
-                            if img_src.startswith('http'):
-                                product_data['image'] = img_src
-                                print(f"DEBUG: Found image using selector '{selector}': {product_data['image']}")
-                                break
-                            elif img_src.startswith('/'):
-                                product_data['image'] = f"https://smartconsumer-beta.org{img_src}"
-                                print(f"DEBUG: Found image using selector '{selector}': {product_data['image']}")
-                                break
-                            elif img_src.startswith('//'):
-                                product_data['image'] = f"https:{img_src}"
-                                print(f"DEBUG: Found image using selector '{selector}': {product_data['image']}")
-                                break
-                except NoSuchElementException:
+                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    print(f"DEBUG: Selector {i+1}/{len(img_selectors)} '{selector}': found {len(elements)} elements")
+                    
+                    for j, element in enumerate(elements):
+                        try:
+                            img_src = element.get_attribute('src')
+                            img_alt = element.get_attribute('alt')
+                            img_class = element.get_attribute('class')
+                            img_width = element.get_attribute('width')
+                            img_height = element.get_attribute('height')
+                            
+                            print(f"DEBUG: Element {j+1}: src='{img_src}', alt='{img_alt}', class='{img_class}', size={img_width}x{img_height}")
+                            
+                            if img_src and img_src.strip():
+                                # Skip data URLs, placeholder images, and logos
+                                if (img_src.startswith('data:') or 
+                                    'placeholder' in img_src.lower() or
+                                    'logo' in img_src.lower() or
+                                    'icon' in img_src.lower()):
+                                    print(f"DEBUG: Skipping image (placeholder/logo): {img_src}")
+                                    continue
+                                
+                                # Skip very small images (but allow 0 dimensions as they might be CSS-sized)
+                                if (img_width and img_width != '0' and int(img_width) < 50) or \
+                                   (img_height and img_height != '0' and int(img_height) < 50):
+                                    print(f"DEBUG: Skipping image (too small): {img_src}")
+                                    continue
+                                
+                                # Handle different URL formats
+                                if img_src.startswith('http'):
+                                    product_data['image'] = img_src
+                                    print(f"DEBUG: ✅ Found image using selector '{selector}': {product_data['image']}")
+                                    break
+                                elif img_src.startswith('/'):
+                                    product_data['image'] = f"https://smartconsumer-beta.org{img_src}"
+                                    print(f"DEBUG: ✅ Found image using selector '{selector}': {product_data['image']}")
+                                    break
+                                elif img_src.startswith('//'):
+                                    product_data['image'] = f"https:{img_src}"
+                                    print(f"DEBUG: ✅ Found image using selector '{selector}': {product_data['image']}")
+                                    break
+                        except Exception as e:
+                            print(f"DEBUG: Error processing element {j+1}: {e}")
+                            continue
+                    
+                    if product_data['image']:
+                        break
+                        
+                except Exception as e:
+                    print(f"DEBUG: Error with selector '{selector}': {e}")
                     continue
             
             # Fallback: Look for any img tag with reasonable dimensions
