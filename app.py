@@ -1477,6 +1477,59 @@ def get_recently_added_products():
             'message': f'Failed to get recently added products: {str(e)}'
         }), 500
 
+@app.route('/api/migrate-products-to-barcode-cache', methods=['POST'])
+def migrate_products_to_barcode_cache():
+    """Migrate all products from products collection to barcode_cache collection"""
+    try:
+        if not db:
+            return jsonify({'status': 'error', 'message': 'Database not available'}), 500
+        
+        migrated_count = 0
+        
+        # Get all products from products collection
+        products_ref = db.collection('products')
+        products_docs = products_ref.stream()
+        
+        for doc in products_docs:
+            product_data = doc.to_dict()
+            barcode = product_data.get('barcode')
+            
+            if barcode:
+                # Check if product already exists in barcode_cache
+                existing_product = db.collection('barcode_cache').document(barcode).get()
+                
+                if not existing_product.exists:
+                    # Create barcode_cache data
+                    barcode_cache_data = {
+                        'barcode': barcode,
+                        'name': product_data.get('name', 'Unknown'),
+                        'price': product_data.get('price', 'N/A'),
+                        'image': product_data.get('image'),
+                        'brand': product_data.get('brand', ''),
+                        'category': product_data.get('category', ''),
+                        'description': product_data.get('description', ''),
+                        'source': product_data.get('source', 'migrated_from_products'),
+                        'verified': product_data.get('verified', True),
+                        'verifiedAt': product_data.get('verifiedAt', datetime.now().isoformat()),
+                        'createdAt': product_data.get('createdAt', datetime.now().isoformat()),
+                        'originalUnfoundId': product_data.get('originalUnfoundId'),
+                        'recentlyAddedId': product_data.get('recentlyAddedId'),
+                        'scrapedAt': product_data.get('scrapedAt')
+                    }
+                    
+                    # Add to barcode_cache collection
+                    db.collection('barcode_cache').document(barcode).set(barcode_cache_data)
+                    migrated_count += 1
+                    print(f"Migrated product {barcode} to barcode_cache")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully migrated {migrated_count} products to barcode_cache collection',
+            'migratedCount': migrated_count
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/debug-verify', methods=['POST'])
 def debug_verify():
     """Debug verification function"""
