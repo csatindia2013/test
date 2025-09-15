@@ -1474,27 +1474,53 @@ def stop_background_processor_api():
             'message': f'Failed to stop background processor: {str(e)}'
         })
 
-@app.route('/api/background-processor/run-now', methods=['POST'])
-def run_background_processor_now():
-    """Run background processor immediately"""
+@app.route('/api/background-processor/start-continuous', methods=['POST'])
+def start_continuous_background_processor():
+    """Start the background processor in continuous real-time mode"""
     try:
-        if processing_status['running']:
+        success = start_background_processor()
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': 'Background processor started in CONTINUOUS REAL-TIME mode',
+                'mode': 'continuous'
+            })
+        else:
             return jsonify({
                 'status': 'error',
                 'message': 'Background processor is already running'
             })
-        
-        # Run in a separate thread to avoid blocking
-        def run_now():
-            process_unfound_barcodes_background()
-        
-        thread = threading.Thread(target=run_now, daemon=True)
-        thread.start()
-        
+    except Exception as e:
         return jsonify({
-            'status': 'success',
-            'message': 'Background processor started immediately'
+            'status': 'error',
+            'message': f'Failed to start continuous background processor: {str(e)}'
         })
+
+@app.route('/api/background-processor/run-now', methods=['POST'])
+def run_background_processor_now():
+    """Run background processor immediately (for testing)"""
+    try:
+        if not processing_status['running']:
+            return jsonify({
+                'status': 'error',
+                'message': 'Background processor is not running. Start it first with /api/background-processor/start-continuous'
+            })
+        
+        # Trigger immediate processing
+        unfound_barcodes = get_unfound_barcodes_for_processing()
+        
+        if unfound_barcodes:
+            return jsonify({
+                'status': 'success',
+                'message': f'Found {len(unfound_barcodes)} barcodes to process. Processing will continue automatically.',
+                'barcodes_found': len(unfound_barcodes)
+            })
+        else:
+            return jsonify({
+                'status': 'success',
+                'message': 'No unfound barcodes to process at this time',
+                'barcodes_found': 0
+            })
     except Exception as e:
         return jsonify({
             'status': 'error',
@@ -2263,34 +2289,181 @@ def fetch_product_data_internal(barcode, url):
                 pass
 
 def start_background_processor():
-    """Start the background processor"""
+    """Start the background processor in continuous real-time mode"""
     global background_processor
     
     if background_processor and background_processor.is_alive():
         print("DEBUG: Background processor already running")
         return False
     
-    # Schedule the job to run every 30 minutes
-    schedule.every(30).minutes.do(process_unfound_barcodes_background)
+    def continuous_processor():
+        """Continuously process unfound barcodes in real-time"""
+        processing_status['running'] = True
+        print("DEBUG: 🚀 Background processor started in CONTINUOUS REAL-TIME mode")
+        
+        while processing_status['running']:
+            try:
+                # Check for unfound barcodes to process
+                unfound_barcodes = get_unfound_barcodes_for_processing()
+                
+                if unfound_barcodes:
+                    print(f"DEBUG: 🔄 Found {len(unfound_barcodes)} barcodes to process")
+                    
+                    # Process each barcode
+                    for i, barcode_data in enumerate(unfound_barcodes):
+                        if not processing_status['running']:
+                            print("DEBUG: Background processor stopped by user")
+                            break
+                            
+                        print(f"DEBUG: Processing barcode {barcode_data['barcode']} ({i+1}/{len(unfound_barcodes)})")
+                        processing_status['current_barcode'] = barcode_data['barcode']
+                        
+                        # Process the barcode
+                        result = process_single_barcode(barcode_data)
+                        
+                        if result:
+                            print(f"DEBUG: ✅ Successfully processed {barcode_data['barcode']}")
+                        else:
+                            print(f"DEBUG: ❌ Failed to process {barcode_data['barcode']}")
+                        
+                        # Human-like delay between barcodes (2-5 seconds)
+                        import random
+                        delay = random.uniform(2, 5)
+                        print(f"DEBUG: Waiting {delay:.1f} seconds before next barcode...")
+                        time.sleep(delay)
+                    
+                    processing_status['current_barcode'] = None
+                    print(f"DEBUG: ✅ Completed processing batch of {len(unfound_barcodes)} barcodes")
+                else:
+                    print("DEBUG: No unfound barcodes to process, waiting 30 seconds...")
+                    time.sleep(30)  # Wait 30 seconds before checking again
+                    
+            except Exception as e:
+                print(f"DEBUG: Error in continuous processor: {e}")
+                time.sleep(60)  # Wait 1 minute on error before retrying
+        
+        print("DEBUG: Background processor stopped")
     
-    def run_scheduler():
-        while True:
-            schedule.run_pending()
-            time.sleep(60)  # Check every minute
-    
-    background_processor = threading.Thread(target=run_scheduler, daemon=True)
+    background_processor = threading.Thread(target=continuous_processor, daemon=True)
     background_processor.start()
     
-    print("DEBUG: Background processor started - will check unfound barcodes every 30 minutes")
+    print("DEBUG: 🚀 Background processor started in CONTINUOUS REAL-TIME mode")
     return True
+
+def get_unfound_barcodes_for_processing():
+    """Get unfound barcodes that need processing"""
+    try:
+        if not db:
+            print("DEBUG: Database not available")
+            return []
+        
+        unfound_barcodes = []
+        unfound_ref = db.collection('unfound_barcodes')
+        docs = unfound_ref.stream()
+        
+        for doc in docs:
+            barcode_data = doc.to_dict()
+            barcode_data['id'] = doc.id
+            
+            last_retry = barcode_data.get('lastRetry')
+            retry_count = barcode_data.get('retryCount', 0)
+            
+            # Include barcodes that have never been retried or haven't been retried in the last 24 hours
+            if not last_retry or retry_count == 0:
+                unfound_barcodes.append(barcode_data)
+                print(f"DEBUG: Adding never-retried barcode: {barcode_data['barcode']}")
+            else:
+                # Check if it's been more than 24 hours since last retry
+                try:
+                    last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
+                    if (datetime.now(timezone.utc) - last_retry_time).total_seconds() > 86400:  # 24 hours
+                        unfound_barcodes.append(barcode_data)
+                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                    else:
+                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                except Exception as e:
+                    print(f"DEBUG: Error parsing lastRetry for {barcode_data['barcode']}: {e}")
+                    # If we can't parse the date, include it anyway
+                    unfound_barcodes.append(barcode_data)
+        
+        print(f"DEBUG: Found {len(unfound_barcodes)} barcodes to retry")
+        return unfound_barcodes
+        
+    except Exception as e:
+        print(f"DEBUG: Error getting unfound barcodes: {e}")
+        return []
+
+def process_single_barcode(barcode_data):
+    """Process a single barcode and return success status"""
+    try:
+        barcode = barcode_data['barcode']
+        print(f"DEBUG: Processing barcode: {barcode}")
+        
+        # Add human-like delay
+        import random
+        delay = random.uniform(2, 4)
+        print(f"DEBUG: Background processor - Waiting {delay:.1f} seconds (human-like delay)...")
+        time.sleep(delay)
+        
+        # Try to fetch product data
+        result = fetch_product_data_internal(barcode)
+        
+        if result and result.get('status') == 'success':
+            product_data = result['product']
+            product_data['source'] = 'background_retry'
+            product_data['originalUnfoundId'] = barcode_data['id']
+            product_data['createdAt'] = datetime.now().isoformat()
+            
+            # Add directly to barcode_cache collection (main database) with verified: false
+            barcode_cache_data = {
+                'barcode': barcode,
+                'name': product_data.get('name', 'Unknown'),
+                'price': product_data.get('price', 'N/A'),
+                'mrp': product_data.get('mrp', product_data.get('price', 'N/A')),
+                'image': product_data.get('image'),
+                'brand': product_data.get('brand', ''),
+                'category': product_data.get('category', ''),
+                'description': product_data.get('description', ''),
+                'verified': False,  # Ready for admin verification
+                'source': 'background_processor',
+                'createdAt': datetime.now().isoformat(),
+                'originalUnfoundId': barcode_data['id'],
+                'scrapedAt': datetime.now().isoformat()
+            }
+            db.collection('barcode_cache').document(barcode).set(barcode_cache_data)
+            
+            # Remove from unfound barcodes
+            db.collection('unfound_barcodes').document(barcode_data['id']).delete()
+            
+            print(f"DEBUG: ✅ Successfully processed and moved {barcode} to main database")
+            return True
+        else:
+            # Update retry count and timestamp
+            retry_count = barcode_data.get('retryCount', 0) + 1
+            db.collection('unfound_barcodes').document(barcode_data['id']).update({
+                'retryCount': retry_count,
+                'lastRetry': datetime.now().isoformat()
+            })
+            
+            print(f"DEBUG: ❌ Still not found: {barcode} (retry #{retry_count})")
+            
+            # Human-like delay before next barcode
+            delay = random.uniform(8, 15)
+            print(f"DEBUG: Waiting {delay:.1f} seconds before next barcode (human-like delay)...")
+            time.sleep(delay)
+            
+            return False
+            
+    except Exception as e:
+        print(f"DEBUG: Error processing barcode {barcode_data['barcode']}: {e}")
+        return False
 
 def stop_background_processor():
     """Stop the background processor"""
     global background_processor
-    schedule.clear()
     processing_status['running'] = False
     processing_status['current_barcode'] = None
-    print("DEBUG: Background processor stopped")
+    print("DEBUG: Background processor stop requested")
 
 def fallback_to_requests_scraping(url, barcode):
     """Fallback to requests-based scraping when Selenium fails"""
