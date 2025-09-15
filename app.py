@@ -488,24 +488,24 @@ try:
                 print("Firebase app already initialized, using existing app")
             except ValueError:
                 firebase_config = {
-                    "type": "service_account",
-                    "project_id": os.environ.get('FIREBASE_PROJECT_ID'),
-                    "private_key_id": os.environ.get('FIREBASE_PRIVATE_KEY_ID'),
-                    "private_key": os.environ.get('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
-                    "client_email": os.environ.get('FIREBASE_CLIENT_EMAIL'),
-                    "client_id": os.environ.get('FIREBASE_CLIENT_ID'),
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                    "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('FIREBASE_CLIENT_EMAIL')}"
-                }
-                
-                if all(firebase_config.values()):
-                    cred = credentials.Certificate(firebase_config)
-                    firebase_admin.initialize_app(cred)
-                    print("Firebase app initialized with environment variables")
-                else:
-                    raise Exception("Missing Firebase environment variables")
+                "type": "service_account",
+                "project_id": os.environ.get('FIREBASE_PROJECT_ID'),
+                "private_key_id": os.environ.get('FIREBASE_PRIVATE_KEY_ID'),
+                "private_key": os.environ.get('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
+                "client_email": os.environ.get('FIREBASE_CLIENT_EMAIL'),
+                "client_id": os.environ.get('FIREBASE_CLIENT_ID'),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('FIREBASE_CLIENT_EMAIL')}"
+            }
+            
+            if all(firebase_config.values()):
+                cred = credentials.Certificate(firebase_config)
+                firebase_admin.initialize_app(cred)
+                print("Firebase app initialized with environment variables")
+            else:
+                raise Exception("Missing Firebase environment variables")
                 
         except Exception as e2:
             print(f"Environment variables failed: {e2}")
@@ -1712,6 +1712,131 @@ def verify_recently_added_products():
             'message': f'Failed to verify products: {str(e)}'
         }), 500
 
+@app.route('/api/products/unverified', methods=['GET'])
+def get_unverified_products():
+    """Get unverified products from main database for admin review"""
+    try:
+        if not db:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 500
+        
+        # Get unverified products from barcode_cache collection
+        unverified_products = []
+        barcode_cache_ref = db.collection('barcode_cache')
+        
+        # Filter for unverified products
+        query = barcode_cache_ref.where('verified', '==', False)
+        docs = query.stream()
+        
+        for doc in docs:
+            product_data = doc.to_dict()
+            product_data['id'] = doc.id
+            unverified_products.append(product_data)
+        
+        # Sort by createdAt (newest first)
+        unverified_products.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+        
+        return jsonify({
+            'status': 'success',
+            'data': unverified_products,
+            'count': len(unverified_products)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to get unverified products: {str(e)}'
+        }), 500
+
+@app.route('/api/products/bulk-verify', methods=['POST'])
+def bulk_verify_products():
+    """Bulk verify products by setting verified: true"""
+    try:
+        if not db:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 500
+        
+        data = request.get_json()
+        product_ids = data.get('productIds', [])
+        
+        if not product_ids:
+            return jsonify({
+                'status': 'error',
+                'message': 'Product IDs required'
+            }), 400
+        
+        verified_count = 0
+        current_time = datetime.now().isoformat()
+        
+        for product_id in product_ids:
+            try:
+                # Update product to verified: true
+                db.collection('barcode_cache').document(product_id).update({
+                    'verified': True,
+                    'verifiedAt': current_time
+                })
+                verified_count += 1
+                print(f"✅ Verified product {product_id}")
+                
+            except Exception as e:
+                print(f"Error verifying product {product_id}: {e}")
+                continue
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully verified {verified_count} out of {len(product_ids)} products',
+            'verifiedCount': verified_count,
+            'totalRequested': len(product_ids)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to verify products: {str(e)}'
+        }), 500
+
+@app.route('/api/products/update-missing-images', methods=['POST'])
+def update_missing_images():
+    """Update products that have null/empty images with placeholder thumbnails"""
+    try:
+        if not db:
+            return jsonify({'status': 'error', 'message': 'Database not available'}), 500
+        
+        updated_count = 0
+        placeholder_image = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+        
+        # Get all products from barcode_cache collection
+        barcode_cache_ref = db.collection('barcode_cache')
+        docs = barcode_cache_ref.stream()
+        
+        for doc in docs:
+            try:
+                product_data = doc.to_dict()
+                
+                # Check if image is null, empty, or None
+                if not product_data.get('image') or product_data.get('image') == 'null' or product_data.get('image') == '':
+                    # Update with placeholder image
+                    db.collection('barcode_cache').document(doc.id).update({
+                        'image': placeholder_image,
+                        'imageUpdatedAt': datetime.now().isoformat()
+                    })
+                    updated_count += 1
+                    print(f"Updated product {doc.id} with placeholder image")
+                    
+            except Exception as e:
+                print(f"Error updating product {doc.id}: {e}")
+                continue
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully updated {updated_count} products with placeholder images',
+            'updatedCount': updated_count
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/recently-added-products/update-fields', methods=['POST'])
 def update_recently_added_products_fields():
     """Update existing recently added products with new fields (MRP, brand, category, description)"""
@@ -1877,36 +2002,23 @@ def process_unfound_barcodes_background():
                     product_data['originalUnfoundId'] = barcode_data['id']
                     product_data['createdAt'] = processed_at
                     
-                    # Add to products collection using barcode as document ID
-                    db.collection('products').document(barcode_data['barcode']).set(product_data)
-                    
-                    # Also add to recently added products collection for tracking
-                    recently_added_data = {
-                        'productId': barcode_data['barcode'],  # Use barcode as ID
+                    # Add directly to barcode_cache collection (main database) with verified: false
+                    barcode_cache_data = {
                         'barcode': barcode_data['barcode'],
-                        'productName': product_data.get('name', 'Unknown'),
+                        'name': product_data.get('name', 'Unknown'),
                         'price': product_data.get('price', 'N/A'),
-                        'mrp': product_data.get('mrp', product_data.get('price', 'N/A')),  # Add MRP field
+                        'mrp': product_data.get('mrp', product_data.get('price', 'N/A')),
                         'image': product_data.get('image'),
                         'brand': product_data.get('brand', ''),
                         'category': product_data.get('category', ''),
                         'description': product_data.get('description', ''),
-                        'addedAt': processed_at,
+                        'verified': False,  # Ready for admin verification
                         'source': 'background_processor',
+                        'createdAt': processed_at,
                         'originalUnfoundId': barcode_data['id'],
-                        'verified': False,
-                        'scrapedData': {
-                            'name': product_data.get('name', 'Unknown'),
-                            'price': product_data.get('price', 'N/A'),
-                            'mrp': product_data.get('mrp', product_data.get('price', 'N/A')),
-                            'image': product_data.get('image'),
-                            'brand': product_data.get('brand', ''),
-                            'category': product_data.get('category', ''),
-                            'description': product_data.get('description', ''),
-                            'scrapedAt': processed_at
-                        }
+                        'scrapedAt': processed_at
                     }
-                    db.collection('recently_added_products').add(recently_added_data)
+                    db.collection('barcode_cache').document(barcode_data['barcode']).set(barcode_cache_data)
                     
                     # Remove from unfound barcodes
                     db.collection('unfound_barcodes').document(barcode_data['id']).delete()
@@ -2365,7 +2477,7 @@ def create_empty_product_data(barcode):
         'barcode': barcode,
         'name': 'N/A',
         'price': 'N/A',
-        'image': None
+        'image': "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"  # Default placeholder
     }
 
 def extract_product_data_selenium(driver, soup, barcode):
@@ -2519,9 +2631,9 @@ def extract_product_data_selenium(driver, soup, barcode):
         
         # Brand and category extraction removed - not required
         
-        # Try to extract product image URL
+        # Try to extract product image URL with robust fallback
         try:
-            print(f"DEBUG: Starting image extraction...")
+            print(f"DEBUG: Starting robust image extraction...")
             
             # Scroll to trigger lazy loading
             print(f"DEBUG: Scrolling to trigger lazy loading...")
@@ -2654,9 +2766,19 @@ def extract_product_data_selenium(driver, soup, barcode):
                             continue
                 except Exception as e:
                     print(f"DEBUG: Error in fallback image search: {e}")
+            
+            # If still no image found, set placeholder thumbnail
+            if product_data['image'] is None:
+                product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+                print(f"DEBUG: 🖼️ No image found, using placeholder thumbnail")
+            else:
+                print(f"DEBUG: 🖼️ Final image URL: {product_data['image']}")
                     
         except Exception as e:
             print(f"DEBUG: Error extracting image: {e}")
+            # Set placeholder thumbnail on any error
+            product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+            print(f"DEBUG: 🖼️ Error occurred, using placeholder thumbnail")
         
         # Description extraction removed - not required
         
@@ -2702,14 +2824,97 @@ def extract_product_data(soup, barcode):
         if price_texts:
             product_data['price'] = price_texts[0].strip()
         
-        # Try to find product image
-        img_element = soup.find('img', src=True)
-        if img_element:
-            img_src = img_element['src']
-            if img_src.startswith('http'):
-                product_data['image'] = img_src
-            elif img_src.startswith('/'):
-                product_data['image'] = f"https://smartconsumer-beta.org{img_src}"
+        # Try to find product image with robust fallback
+        try:
+            print(f"DEBUG: Fallback - Starting image extraction...")
+            
+            # Enhanced image selectors for fallback scraping
+            img_selectors = [
+                "img",  # Most basic selector
+                "img[src*='product']",
+                "img[src*='Product']",
+                "img[alt*='product']",
+                "img[alt*='Product']",
+                "img[class*='product']",
+                "img[class*='main']",
+                "img[class*='hero']",
+                "img[class*='featured']",
+                ".product-image img",
+                ".product-photo img",
+                ".product-img img",
+                ".main-image img",
+                ".hero-image img",
+                ".featured-image img"
+            ]
+            
+            print(f"DEBUG: Fallback - Trying {len(img_selectors)} image selectors...")
+            
+            for i, selector in enumerate(img_selectors):
+                try:
+                    elements = soup.select(selector)
+                    print(f"DEBUG: Fallback - Selector {i+1}/{len(img_selectors)} '{selector}': found {len(elements)} elements")
+                    
+                    for j, element in enumerate(elements):
+                        try:
+                            img_src = element.get('src')
+                            img_alt = element.get('alt')
+                            img_class = element.get('class')
+                            img_width = element.get('width')
+                            img_height = element.get('height')
+                            
+                            print(f"DEBUG: Fallback - Element {j+1}: src='{img_src}', alt='{img_alt}', class='{img_class}', size={img_width}x{img_height}")
+                            
+                            if img_src and img_src.strip():
+                                # Skip data URLs, placeholder images, and logos
+                                if (img_src.startswith('data:') or 
+                                    'placeholder' in img_src.lower() or
+                                    'logo' in img_src.lower() or
+                                    'icon' in img_src.lower()):
+                                    print(f"DEBUG: Fallback - Skipping image (placeholder/logo): {img_src}")
+                                    continue
+                                
+                                # Skip very small images (but allow 0 dimensions as they might be CSS-sized)
+                                if (img_width and img_width != '0' and int(img_width) < 50) or \
+                                   (img_height and img_height != '0' and int(img_height) < 50):
+                                    print(f"DEBUG: Fallback - Skipping image (too small): {img_src}")
+                                    continue
+                                
+                                # Handle different URL formats
+                                if img_src.startswith('http'):
+                                    product_data['image'] = img_src
+                                    print(f"DEBUG: Fallback - ✅ Found image using selector '{selector}': {product_data['image']}")
+                                    break
+                                elif img_src.startswith('/'):
+                                    product_data['image'] = f"https://smartconsumer-beta.org{img_src}"
+                                    print(f"DEBUG: Fallback - ✅ Found image using selector '{selector}': {product_data['image']}")
+                                    break
+                                elif img_src.startswith('//'):
+                                    product_data['image'] = f"https:{img_src}"
+                                    print(f"DEBUG: Fallback - ✅ Found image using selector '{selector}': {product_data['image']}")
+                                    break
+                        except Exception as e:
+                            print(f"DEBUG: Fallback - Error processing element {j+1}: {e}")
+                            continue
+                    
+                    if product_data['image']:
+                        break
+                        
+                except Exception as e:
+                    print(f"DEBUG: Fallback - Error with selector '{selector}': {e}")
+                    continue
+            
+            # If still no image found, set placeholder thumbnail
+            if product_data['image'] is None:
+                product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+                print(f"DEBUG: Fallback - 🖼️ No image found, using placeholder thumbnail")
+            else:
+                print(f"DEBUG: Fallback - 🖼️ Final image URL: {product_data['image']}")
+                    
+        except Exception as e:
+            print(f"DEBUG: Fallback - Error extracting image: {e}")
+            # Set placeholder thumbnail on any error
+            product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+            print(f"DEBUG: Fallback - 🖼️ Error occurred, using placeholder thumbnail")
         
         # If we found at least a name or price, return it
         if product_data['name'] != 'N/A' or product_data['price'] != 'N/A':
