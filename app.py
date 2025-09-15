@@ -1520,6 +1520,45 @@ def stop_background_processor_api():
             'message': f'Failed to stop background processor: {str(e)}'
         })
 
+@app.route('/api/background-processor/reset-retries', methods=['POST'])
+def reset_retry_counts():
+    """Reset retry counts for all unfound barcodes (for testing)"""
+    try:
+        if not db:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 500
+        
+        # Get all unfound barcodes
+        unfound_barcodes_ref = db.collection('unfound_barcodes')
+        docs = unfound_barcodes_ref.stream()
+        
+        reset_count = 0
+        for doc in docs:
+            try:
+                # Reset retry count and lastRetry
+                db.collection('unfound_barcodes').document(doc.id).update({
+                    'retryCount': 0,
+                    'lastRetry': None
+                })
+                reset_count += 1
+            except Exception as e:
+                print(f"Error resetting barcode {doc.id}: {e}")
+                continue
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully reset retry counts for {reset_count} barcodes',
+            'resetCount': reset_count
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to reset retry counts: {str(e)}'
+        }), 500
+
 @app.route('/api/background-processor/start-continuous', methods=['POST'])
 def start_continuous_background_processor():
     """Start the background processor in continuous real-time mode"""
@@ -2131,7 +2170,7 @@ def process_unfound_barcodes_background():
             barcode_data = doc.to_dict()
             barcode_data['id'] = doc.id
             
-            # Process barcodes that haven't been retried at all OR haven't been retried in the last 24 hours
+            # Process barcodes that haven't been retried at all OR haven't been retried in the last 2 hours
             last_retry = barcode_data.get('lastRetry')
             retry_count = barcode_data.get('retryCount', 0)
             
@@ -2140,7 +2179,7 @@ def process_unfound_barcodes_background():
                 unfound_barcodes.append(barcode_data)
                 print(f"DEBUG: Adding never-retried barcode: {barcode_data['barcode']}")
             else:
-                # Check if it's been more than 24 hours since last retry
+                # Check if it's been more than 2 hours since last retry (reduced from 24 hours)
                 try:
                     # Handle different datetime formats
                     if last_retry.endswith('Z'):
@@ -2155,7 +2194,7 @@ def process_unfound_barcodes_background():
                     current_time = datetime.now(timezone.utc)
                     time_diff = (current_time - last_retry_time).total_seconds()
                     
-                    if time_diff > 86400:  # 24 hours
+                    if time_diff > 7200:  # 2 hours (reduced from 24 hours)
                         unfound_barcodes.append(barcode_data)
                         print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
                     else:
@@ -2247,7 +2286,7 @@ def process_unfound_barcodes_background():
                 
                 # Add human-like delay between requests to avoid being blocked
                 import random
-                delay = random.uniform(8, 15)  # Random delay between 8-15 seconds
+                delay = random.uniform(3, 6)  # Reduced delay between 3-6 seconds
                 print(f"DEBUG: Waiting {delay:.1f} seconds before next barcode (human-like delay)...")
                 time.sleep(delay)
                 
