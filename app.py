@@ -2772,6 +2772,8 @@ def extract_product_data_selenium(driver, soup, barcode):
                 "img[alt*='Product']",
                 "img[src*='product']",
                 "img[src*='Product']",
+                "img[src*='gs1datakart']",  # GS1 DataKart API images
+                "img[src*='api.gs1datakart.org']",  # GS1 DataKart API images
                 "img[class*='product']",
                 "img[class*='main']",
                 "img[class*='hero']",
@@ -2869,10 +2871,23 @@ def extract_product_data_selenium(driver, soup, barcode):
                 except Exception as e:
                     print(f"DEBUG: Error in fallback image search: {e}")
             
-            # If still no image found, set placeholder thumbnail
+            # If still no image found, try to construct GS1 DataKart URL based on barcode pattern
             if product_data['image'] is None:
-                product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
-                print(f"DEBUG: 🖼️ No image found, using placeholder thumbnail")
+                try:
+                    barcode = product_data['barcode']
+                    if barcode and len(barcode) >= 13:
+                        # Extract first 9 digits for GS1 DataKart pattern
+                        prefix = barcode[:9]
+                        # Try to construct GS1 DataKart image URL
+                        gs1_url = f"https://api.gs1datakart.org/files/render?file_key=product_upload/{prefix}/{barcode}/{barcode}_f.png"
+                        product_data['image'] = gs1_url
+                        print(f"DEBUG: 🖼️ Constructed GS1 DataKart URL: {gs1_url}")
+                    else:
+                        product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+                        print(f"DEBUG: 🖼️ No image found, using placeholder thumbnail")
+                except Exception as e:
+                    product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+                    print(f"DEBUG: 🖼️ Error constructing GS1 URL, using placeholder: {e}")
             else:
                 print(f"DEBUG: 🖼️ Final image URL: {product_data['image']}")
                     
@@ -2935,6 +2950,8 @@ def extract_product_data(soup, barcode):
                 "img",  # Most basic selector
                 "img[src*='product']",
                 "img[src*='Product']",
+                "img[src*='gs1datakart']",  # GS1 DataKart API images
+                "img[src*='api.gs1datakart.org']",  # GS1 DataKart API images
                 "img[alt*='product']",
                 "img[alt*='Product']",
                 "img[class*='product']",
@@ -3005,10 +3022,23 @@ def extract_product_data(soup, barcode):
                     print(f"DEBUG: Fallback - Error with selector '{selector}': {e}")
                     continue
             
-            # If still no image found, set placeholder thumbnail
+            # If still no image found, try to construct GS1 DataKart URL based on barcode pattern
             if product_data['image'] is None:
-                product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
-                print(f"DEBUG: Fallback - 🖼️ No image found, using placeholder thumbnail")
+                try:
+                    barcode = product_data['barcode']
+                    if barcode and len(barcode) >= 13:
+                        # Extract first 9 digits for GS1 DataKart pattern
+                        prefix = barcode[:9]
+                        # Try to construct GS1 DataKart image URL
+                        gs1_url = f"https://api.gs1datakart.org/files/render?file_key=product_upload/{prefix}/{barcode}/{barcode}_f.png"
+                        product_data['image'] = gs1_url
+                        print(f"DEBUG: Fallback - 🖼️ Constructed GS1 DataKart URL: {gs1_url}")
+                    else:
+                        product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+                        print(f"DEBUG: Fallback - 🖼️ No image found, using placeholder thumbnail")
+                except Exception as e:
+                    product_data['image'] = "https://via.placeholder.com/300x300/cccccc/666666?text=Add+Image"
+                    print(f"DEBUG: Fallback - 🖼️ Error constructing GS1 URL, using placeholder: {e}")
             else:
                 print(f"DEBUG: Fallback - 🖼️ Final image URL: {product_data['image']}")
                     
