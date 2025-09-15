@@ -1451,7 +1451,7 @@ def get_recently_added_products():
 
 @app.route('/api/recently-added-products/verify', methods=['POST'])
 def verify_recently_added_products():
-    """Mark recently added products as verified"""
+    """Mark recently added products as verified and move them to main products collection"""
     try:
         if not db:
             return jsonify({
@@ -1469,21 +1469,79 @@ def verify_recently_added_products():
             }), 400
         
         verified_count = 0
+        moved_to_products_count = 0
+        
         for product_id in product_ids:
             try:
+                # Get the product data from recently_added_products
+                product_doc = db.collection('recently_added_products').document(product_id).get()
+                
+                if not product_doc.exists:
+                    print(f"Product {product_id} not found in recently_added_products")
+                    continue
+                
+                product_data = product_doc.to_dict()
+                barcode = product_data.get('barcode')
+                
+                if not barcode:
+                    print(f"No barcode found for product {product_id}")
+                    continue
+                
+                # Check if product already exists in main products collection
+                existing_product = db.collection('products').document(barcode).get()
+                
+                if existing_product.exists:
+                    print(f"Product with barcode {barcode} already exists in products collection")
+                    # Just mark as verified
+                    db.collection('recently_added_products').document(product_id).update({
+                        'verified': True,
+                        'verifiedAt': datetime.now().isoformat()
+                    })
+                    verified_count += 1
+                    continue
+                
+                # Get scraped data if available
+                scraped_data = product_data.get('scrapedData', {})
+                
+                # Create product data for main products collection
+                main_product_data = {
+                    'barcode': barcode,
+                    'name': product_data.get('productName', scraped_data.get('name', 'Unknown')),
+                    'price': product_data.get('price', scraped_data.get('price', 'N/A')),
+                    'image': product_data.get('image', scraped_data.get('image')),
+                    'source': 'background_processor_verified',
+                    'verified': True,
+                    'verifiedAt': datetime.now().isoformat(),
+                    'createdAt': product_data.get('addedAt', datetime.now().isoformat()),
+                    'originalUnfoundId': product_data.get('originalUnfoundId'),
+                    'recentlyAddedId': product_id,
+                    'scrapedAt': scraped_data.get('scrapedAt', product_data.get('addedAt'))
+                }
+                
+                # Add to main products collection
+                db.collection('products').document(barcode).set(main_product_data)
+                moved_to_products_count += 1
+                
+                # Mark as verified in recently_added_products
                 db.collection('recently_added_products').document(product_id).update({
                     'verified': True,
-                    'verifiedAt': datetime.now().isoformat()
+                    'verifiedAt': datetime.now().isoformat(),
+                    'movedToProducts': True,
+                    'productsCollectionId': barcode
                 })
                 verified_count += 1
+                
+                print(f"✅ Verified and moved product {barcode} to main products collection")
+                
             except Exception as e:
                 print(f"Error verifying product {product_id}: {e}")
                 continue
         
         return jsonify({
             'status': 'success',
-            'message': f'Successfully verified {verified_count} products',
-            'verifiedCount': verified_count
+            'message': f'Successfully verified {verified_count} products, moved {moved_to_products_count} to main products collection',
+            'verifiedCount': verified_count,
+            'movedToProductsCount': moved_to_products_count
         })
     except Exception as e:
         return jsonify({
@@ -1608,10 +1666,18 @@ def process_unfound_barcodes_background():
                         'productId': barcode_data['barcode'],  # Use barcode as ID
                         'barcode': barcode_data['barcode'],
                         'productName': product_data.get('name', 'Unknown'),
+                        'price': product_data.get('price', 'N/A'),
+                        'image': product_data.get('image'),
                         'addedAt': processed_at,
                         'source': 'background_processor',
                         'originalUnfoundId': barcode_data['id'],
-                        'verified': False
+                        'verified': False,
+                        'scrapedData': {
+                            'name': product_data.get('name', 'Unknown'),
+                            'price': product_data.get('price', 'N/A'),
+                            'image': product_data.get('image'),
+                            'scrapedAt': processed_at
+                        }
                     }
                     db.collection('recently_added_products').add(recently_added_data)
                     
