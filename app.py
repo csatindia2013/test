@@ -439,41 +439,55 @@ try:
     
     # Try to load service account file or environment variables
     try:
-        print("Loading service account file...")
-        cred = credentials.Certificate('firebase-service-account.json')
-        firebase_admin.initialize_app(cred)
-        print("Firebase app initialized with service account")
+        # Check if Firebase is already initialized
+        try:
+            existing_app = firebase_admin.get_app()
+            print("Firebase app already initialized, using existing app")
+        except ValueError:
+            print("Loading service account file...")
+            cred = credentials.Certificate('firebase-service-account.json')
+            firebase_admin.initialize_app(cred)
+            print("Firebase app initialized with service account")
     except Exception as e:
         print(f"Service account file failed: {e}")
         
         # Try environment variables (for Render deployment)
         try:
             import os
-            firebase_config = {
-                "type": "service_account",
-                "project_id": os.environ.get('FIREBASE_PROJECT_ID'),
-                "private_key_id": os.environ.get('FIREBASE_PRIVATE_KEY_ID'),
-                "private_key": os.environ.get('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
-                "client_email": os.environ.get('FIREBASE_CLIENT_EMAIL'),
-                "client_id": os.environ.get('FIREBASE_CLIENT_ID'),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('FIREBASE_CLIENT_EMAIL')}"
-            }
-            
-            if all(firebase_config.values()):
-                cred = credentials.Certificate(firebase_config)
-                firebase_admin.initialize_app(cred)
-                print("Firebase app initialized with environment variables")
-            else:
-                raise Exception("Missing Firebase environment variables")
+            # Check if Firebase is already initialized
+            try:
+                existing_app = firebase_admin.get_app()
+                print("Firebase app already initialized, using existing app")
+            except ValueError:
+                firebase_config = {
+                    "type": "service_account",
+                    "project_id": os.environ.get('FIREBASE_PROJECT_ID'),
+                    "private_key_id": os.environ.get('FIREBASE_PRIVATE_KEY_ID'),
+                    "private_key": os.environ.get('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
+                    "client_email": os.environ.get('FIREBASE_CLIENT_EMAIL'),
+                    "client_id": os.environ.get('FIREBASE_CLIENT_ID'),
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('FIREBASE_CLIENT_EMAIL')}"
+                }
+                
+                if all(firebase_config.values()):
+                    cred = credentials.Certificate(firebase_config)
+                    firebase_admin.initialize_app(cred)
+                    print("Firebase app initialized with environment variables")
+                else:
+                    raise Exception("Missing Firebase environment variables")
                 
         except Exception as e2:
             print(f"Environment variables failed: {e2}")
             print("Trying Application Default Credentials...")
-            firebase_admin.initialize_app()
-            print("Firebase app initialized with default credentials")
+            try:
+                existing_app = firebase_admin.get_app()
+                print("Firebase app already initialized, using existing app")
+            except ValueError:
+                firebase_admin.initialize_app()
+                print("Firebase app initialized with default credentials")
     
     # Create Firestore client
     db = firestore.client()
@@ -1541,13 +1555,26 @@ def process_unfound_barcodes_background():
             barcode_data = doc.to_dict()
             barcode_data['id'] = doc.id
             
-            # Only retry barcodes that haven't been checked in the last 24 hours
+            # Process barcodes that haven't been retried at all OR haven't been retried in the last 24 hours
             last_retry = barcode_data.get('lastRetry')
-            if not last_retry:
+            retry_count = barcode_data.get('retryCount', 0)
+            
+            if not last_retry or retry_count == 0:
+                # Never retried - process it
                 unfound_barcodes.append(barcode_data)
+                print(f"DEBUG: Adding never-retried barcode: {barcode_data['barcode']}")
             else:
-                last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
-                if (datetime.now(timezone.utc) - last_retry_time).total_seconds() > 86400:  # 24 hours
+                # Check if it's been more than 24 hours since last retry
+                try:
+                    last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
+                    if (datetime.now(timezone.utc) - last_retry_time).total_seconds() > 86400:  # 24 hours
+                        unfound_barcodes.append(barcode_data)
+                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                    else:
+                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry})")
+                except Exception as e:
+                    print(f"DEBUG: Error parsing lastRetry for {barcode_data['barcode']}: {e}")
+                    # If we can't parse the date, include it anyway
                     unfound_barcodes.append(barcode_data)
         
         print(f"DEBUG: Found {len(unfound_barcodes)} barcodes to retry")
