@@ -1112,15 +1112,135 @@ def get_unfound_barcodes():
             # Get unfound barcodes from Firebase
             unfound_barcodes_ref = db.collection('unfound_barcodes')
             unfound_barcodes = []
+            
             for doc in unfound_barcodes_ref.stream():
                 barcode_data = doc.to_dict()
                 barcode_data['id'] = doc.id
+                
+                # Determine source based on available fields
+                source = barcode_data.get('source', 'Unknown')
+                if source == 'Unknown':
+                    # Check if it has Excel-specific fields
+                    if 'deviceId' in barcode_data and barcode_data.get('deviceId') != 'Unknown':
+                        source = 'Firebase DB'
+                    elif 'location' in barcode_data and barcode_data.get('location') != 'Unknown':
+                        source = 'Firebase DB'
+                    else:
+                        source = 'Excel Import'
+                elif source == 'excel':
+                    source = 'Excel Import'
+                elif source == 'firebase_db' or source == 'firebase':
+                    source = 'Firebase DB'
+                
+                barcode_data['source'] = source
                 unfound_barcodes.append(barcode_data)
+            
+            # Sort by source and then by creation date
+            unfound_barcodes.sort(key=lambda x: (x.get('source', ''), x.get('createdAt', '')), reverse=True)
+            
+            # Group by source for better organization
+            grouped_barcodes = {
+                'excel': [],
+                'firebase_db': [],
+                'total_count': len(unfound_barcodes)
+            }
+            
+            for barcode in unfound_barcodes:
+                if barcode['source'] == 'Excel Import':
+                    grouped_barcodes['excel'].append(barcode)
+                elif barcode['source'] == 'Firebase DB':
+                    grouped_barcodes['firebase_db'].append(barcode)
+            
+            return jsonify({
+                'barcodes': unfound_barcodes,
+                'grouped': grouped_barcodes,
+                'summary': {
+                    'total': len(unfound_barcodes),
+                    'excel_count': len(grouped_barcodes['excel']),
+                    'firebase_db_count': len(grouped_barcodes['firebase_db'])
+                }
+            })
         else:
             # Use mock data if Firebase not available
-            unfound_barcodes = MOCK_UNFOUND_BARCODES
-        
-        return jsonify(unfound_barcodes)
+            mock_barcodes = []
+            for i, barcode in enumerate(MOCK_UNFOUND_BARCODES):
+                barcode_copy = barcode.copy()
+                barcode_copy['source'] = 'Excel Import' if i % 2 == 0 else 'Firebase DB'
+                mock_barcodes.append(barcode_copy)
+            
+            return jsonify({
+                'barcodes': mock_barcodes,
+                'grouped': {
+                    'excel': [b for b in mock_barcodes if b['source'] == 'Excel Import'],
+                    'firebase_db': [b for b in mock_barcodes if b['source'] == 'Firebase DB'],
+                    'total_count': len(mock_barcodes)
+                },
+                'summary': {
+                    'total': len(mock_barcodes),
+                    'excel_count': len([b for b in mock_barcodes if b['source'] == 'Excel Import']),
+                    'firebase_db_count': len([b for b in mock_barcodes if b['source'] == 'Firebase DB'])
+                }
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/unfound-barcodes/sources', methods=['GET'])
+def get_unfound_barcodes_sources():
+    """Get unfound barcodes grouped by source with counts"""
+    try:
+        if db:
+            # Get unfound barcodes from Firebase
+            unfound_barcodes_ref = db.collection('unfound_barcodes')
+            unfound_barcodes = []
+            
+            for doc in unfound_barcodes_ref.stream():
+                barcode_data = doc.to_dict()
+                barcode_data['id'] = doc.id
+                
+                # Determine source based on available fields
+                source = barcode_data.get('source', 'Unknown')
+                if source == 'Unknown':
+                    # Check if it has Excel-specific fields
+                    if 'deviceId' in barcode_data and barcode_data.get('deviceId') != 'Unknown':
+                        source = 'Firebase DB'
+                    elif 'location' in barcode_data and barcode_data.get('location') != 'Unknown':
+                        source = 'Firebase DB'
+                    else:
+                        source = 'Excel Import'
+                elif source == 'excel':
+                    source = 'Excel Import'
+                elif source == 'firebase_db' or source == 'firebase':
+                    source = 'Firebase DB'
+                
+                barcode_data['source'] = source
+                unfound_barcodes.append(barcode_data)
+            
+            # Group by source
+            excel_barcodes = [b for b in unfound_barcodes if b['source'] == 'Excel Import']
+            firebase_barcodes = [b for b in unfound_barcodes if b['source'] == 'Firebase DB']
+            
+            return jsonify({
+                'sources': {
+                    'excel': {
+                        'name': 'Excel Import',
+                        'count': len(excel_barcodes),
+                        'barcodes': excel_barcodes
+                    },
+                    'firebase_db': {
+                        'name': 'Firebase DB',
+                        'count': len(firebase_barcodes),
+                        'barcodes': firebase_barcodes
+                    }
+                },
+                'total_count': len(unfound_barcodes),
+                'summary': {
+                    'excel_count': len(excel_barcodes),
+                    'firebase_db_count': len(firebase_barcodes),
+                    'total': len(unfound_barcodes)
+                }
+            })
+        else:
+            return jsonify({'error': 'Database not available'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1137,7 +1257,7 @@ def create_unfound_barcode():
         
         barcode_data = {
             'barcode': data['barcode'],
-            'source': data.get('source', 'firebase'),  # Default to 'firebase' for manual additions
+            'source': data.get('source', 'firebase_db'),  # Default to 'firebase_db' for manual additions
             'createdAt': data.get('timestamp', datetime.now().isoformat()),
             'timestamp': data.get('timestamp', datetime.now().isoformat()),  # Keep for backward compatibility
             'deviceId': data.get('deviceId', 'Unknown'),
