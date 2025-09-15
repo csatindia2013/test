@@ -1151,15 +1151,8 @@ def get_unfound_barcodes():
                 elif barcode['source'] == 'Firebase DB':
                     grouped_barcodes['firebase_db'].append(barcode)
             
-            return jsonify({
-                'barcodes': unfound_barcodes,
-                'grouped': grouped_barcodes,
-                'summary': {
-                    'total': len(unfound_barcodes),
-                    'excel_count': len(grouped_barcodes['excel']),
-                    'firebase_db_count': len(grouped_barcodes['firebase_db'])
-                }
-            })
+            # Return the array directly for backward compatibility with existing frontend
+            return jsonify(unfound_barcodes)
         else:
             # Use mock data if Firebase not available
             mock_barcodes = []
@@ -1168,19 +1161,8 @@ def get_unfound_barcodes():
                 barcode_copy['source'] = 'Excel Import' if i % 2 == 0 else 'Firebase DB'
                 mock_barcodes.append(barcode_copy)
             
-            return jsonify({
-                'barcodes': mock_barcodes,
-                'grouped': {
-                    'excel': [b for b in mock_barcodes if b['source'] == 'Excel Import'],
-                    'firebase_db': [b for b in mock_barcodes if b['source'] == 'Firebase DB'],
-                    'total_count': len(mock_barcodes)
-                },
-                'summary': {
-                    'total': len(mock_barcodes),
-                    'excel_count': len([b for b in mock_barcodes if b['source'] == 'Excel Import']),
-                    'firebase_db_count': len([b for b in mock_barcodes if b['source'] == 'Firebase DB'])
-                }
-            })
+            # Return the array directly for backward compatibility with existing frontend
+            return jsonify(mock_barcodes)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
