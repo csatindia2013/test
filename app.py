@@ -2390,40 +2390,11 @@ def get_unfound_barcodes_for_processing():
             barcode_data = doc.to_dict()
             barcode_data['id'] = doc.id
             
-            last_retry = barcode_data.get('lastRetry')
-            retry_count = barcode_data.get('retryCount', 0)
-            
-            # Include barcodes that have never been retried or haven't been retried in the last 24 hours
-            if not last_retry or retry_count == 0:
-                unfound_barcodes.append(barcode_data)
-                print(f"DEBUG: Adding never-retried barcode: {barcode_data['barcode']}")
-            else:
-                # Check if it's been more than 24 hours since last retry
-                try:
-                    # Handle different datetime formats
-                    if last_retry.endswith('Z'):
-                        last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
-                    else:
-                        last_retry_time = datetime.fromisoformat(last_retry)
-                    
-                    # Ensure both datetimes are timezone-aware
-                    if last_retry_time.tzinfo is None:
-                        last_retry_time = last_retry_time.replace(tzinfo=timezone.utc)
-                    
-                    current_time = datetime.now(timezone.utc)
-                    time_diff = (current_time - last_retry_time).total_seconds()
-                    
-                    if time_diff > 86400:  # 24 hours
-                        unfound_barcodes.append(barcode_data)
-                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
-                    else:
-                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
-                except Exception as e:
-                    print(f"DEBUG: Error parsing lastRetry for {barcode_data['barcode']}: {e}")
-                    # If we can't parse the date, include it anyway
-                    unfound_barcodes.append(barcode_data)
+            # Process all unfound barcodes - no retry logic needed since we delete failed ones
+            unfound_barcodes.append(barcode_data)
+            print(f"DEBUG: Adding barcode for processing: {barcode_data['barcode']}")
         
-        print(f"DEBUG: Found {len(unfound_barcodes)} barcodes to retry")
+        print(f"DEBUG: Found {len(unfound_barcodes)} barcodes to process")
         return unfound_barcodes
         
     except Exception as e:
