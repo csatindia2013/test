@@ -10,7 +10,7 @@ class Config:
     FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
     
     # Security settings
-    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'False').lower() == 'true'
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
@@ -30,11 +30,11 @@ class Config:
     
     # Rate limiting
     RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL', 'memory://')
-    RATELIMIT_DEFAULT = "1000 per hour"
+    RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', "1000 per hour")
     
     # Logging
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-    LOG_FILE = os.environ.get('LOG_FILE', 'app.log')
+    LOG_FILE = os.environ.get('LOG_FILE', 'logs/app.log')
     
     # Background processing
     BACKGROUND_PROCESSOR_ENABLED = os.environ.get('BACKGROUND_PROCESSOR_ENABLED', 'true').lower() == 'true'
@@ -46,6 +46,10 @@ class Config:
     # File upload settings
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', 'uploads')
+    
+    # Production settings
+    WTF_CSRF_ENABLED = True
+    WTF_CSRF_TIME_LIMIT = 3600
     
     @staticmethod
     def init_app(app):

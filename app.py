@@ -1059,12 +1059,12 @@ def import_products():
             
                 imported_count += 1
             except Exception as e:
-                errors.append(f"Row {index + 2}: {str(e)}")
+                errors.append(f"Row {row_num}: {str(e)}")
         
         response = {
             'message': f'Successfully imported {imported_count} products',
             'imported_count': imported_count,
-            'total_rows': len(df)
+            'total_rows': ws.max_row - 1
         }
         
         if errors:
@@ -1133,12 +1133,12 @@ def import_categories():
                 
                 imported_count += 1
             except Exception as e:
-                errors.append(f"Row {index + 2}: {str(e)}")
+                errors.append(f"Row {row_num}: {str(e)}")
         
         response = {
             'message': f'Successfully imported {imported_count} categories',
             'imported_count': imported_count,
-            'total_rows': len(df)
+            'total_rows': ws.max_row - 1
         }
         
         if errors:
@@ -3574,6 +3574,42 @@ def scrape_product_data_for_import(barcode, url):
 if __name__ == '__main__':
     import os
     
+    # Setup production logging
+    def setup_production_logging():
+        """Setup production logging configuration"""
+        if not app.debug and not app.testing:
+            import logging
+            from logging.handlers import RotatingFileHandler
+            
+            # Create logs directory if it doesn't exist
+            if not os.path.exists('logs'):
+                os.makedirs('logs', exist_ok=True)
+            
+            # File handler for application logs
+            file_handler = RotatingFileHandler(
+                'logs/app.log', maxBytes=10240000, backupCount=10
+            )
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+            ))
+            file_handler.setLevel(logging.INFO)
+            app.logger.addHandler(file_handler)
+            
+            # Error handler for error logs
+            error_handler = RotatingFileHandler(
+                'logs/error.log', maxBytes=10240000, backupCount=10
+            )
+            error_handler.setFormatter(logging.Formatter(
+                '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+            ))
+            error_handler.setLevel(logging.ERROR)
+            app.logger.addHandler(error_handler)
+            
+            app.logger.setLevel(logging.INFO)
+            app.logger.info('EasyBill Admin Dashboard startup')
+    
+    setup_production_logging()
+    
     print(f"Firebase Status: {firebase_status}")
     if db:
         print("Firebase connected successfully!")
@@ -3585,4 +3621,7 @@ if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_ENV') != 'production'
     
     print(f"Dashboard available at: http://localhost:{port}")
+    print(f"Environment: {os.environ.get('FLASK_ENV', 'development')}")
+    print(f"Debug mode: {debug_mode}")
+    
     app.run(debug=debug_mode, host='0.0.0.0', port=port)

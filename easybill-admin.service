@@ -1,0 +1,26 @@
+[Unit]
+Description=EasyBill Admin Dashboard
+After=network.target
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/easybill_admin
+Environment=PATH=/path/to/easybill_admin/venv/bin
+Environment=FLASK_ENV=production
+ExecStart=/path/to/easybill_admin/venv/bin/gunicorn -w 4 -b 0.0.0.0:5000 wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/path/to/easybill_admin/logs
+ReadWritePaths=/path/to/easybill_admin/uploads
+
+[Install]
+WantedBy=multi-user.target
