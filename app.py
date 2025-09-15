@@ -1520,45 +1520,6 @@ def stop_background_processor_api():
             'message': f'Failed to stop background processor: {str(e)}'
         })
 
-@app.route('/api/background-processor/reset-retries', methods=['POST'])
-def reset_retry_counts():
-    """Reset retry counts for all unfound barcodes (for testing)"""
-    try:
-        if not db:
-            return jsonify({
-                'status': 'error',
-                'message': 'Database not available'
-            }), 500
-        
-        # Get all unfound barcodes
-        unfound_barcodes_ref = db.collection('unfound_barcodes')
-        docs = unfound_barcodes_ref.stream()
-        
-        reset_count = 0
-        for doc in docs:
-            try:
-                # Reset retry count and lastRetry
-                db.collection('unfound_barcodes').document(doc.id).update({
-                    'retryCount': 0,
-                    'lastRetry': None
-                })
-                reset_count += 1
-            except Exception as e:
-                print(f"Error resetting barcode {doc.id}: {e}")
-                continue
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'Successfully reset retry counts for {reset_count} barcodes',
-            'resetCount': reset_count
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Failed to reset retry counts: {str(e)}'
-        }), 500
-
 @app.route('/api/background-processor/start-continuous', methods=['POST'])
 def start_continuous_background_processor():
     """Start the background processor in continuous real-time mode"""
@@ -2162,7 +2123,7 @@ def process_unfound_barcodes_background():
         
         print("DEBUG: Background processor started")
         
-        # Get unfound barcodes that haven't been retried recently
+        # Get all unfound barcodes for processing
         unfound_barcodes_ref = db.collection('unfound_barcodes')
         unfound_barcodes = []
         
@@ -2170,41 +2131,11 @@ def process_unfound_barcodes_background():
             barcode_data = doc.to_dict()
             barcode_data['id'] = doc.id
             
-            # Process barcodes that haven't been retried at all OR haven't been retried in the last 2 hours
-            last_retry = barcode_data.get('lastRetry')
-            retry_count = barcode_data.get('retryCount', 0)
-            
-            if not last_retry or retry_count == 0:
-                # Never retried - process it
-                unfound_barcodes.append(barcode_data)
-                print(f"DEBUG: Adding never-retried barcode: {barcode_data['barcode']}")
-            else:
-                # Check if it's been more than 2 hours since last retry (reduced from 24 hours)
-                try:
-                    # Handle different datetime formats
-                    if last_retry.endswith('Z'):
-                        last_retry_time = datetime.fromisoformat(last_retry.replace('Z', '+00:00'))
-                    else:
-                        last_retry_time = datetime.fromisoformat(last_retry)
-                    
-                    # Ensure both datetimes are timezone-aware
-                    if last_retry_time.tzinfo is None:
-                        last_retry_time = last_retry_time.replace(tzinfo=timezone.utc)
-                    
-                    current_time = datetime.now(timezone.utc)
-                    time_diff = (current_time - last_retry_time).total_seconds()
-                    
-                    if time_diff > 7200:  # 2 hours (reduced from 24 hours)
-                        unfound_barcodes.append(barcode_data)
-                        print(f"DEBUG: Adding retry-eligible barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
-                    else:
-                        print(f"DEBUG: Skipping recently retried barcode: {barcode_data['barcode']} (last retry: {last_retry}, {time_diff/3600:.1f}h ago)")
-                except Exception as e:
-                    print(f"DEBUG: Error parsing lastRetry for {barcode_data['barcode']}: {e}")
-                    # If we can't parse the date, include it anyway
-                    unfound_barcodes.append(barcode_data)
+            # Process all unfound barcodes - no retry logic needed since we delete failed ones
+            unfound_barcodes.append(barcode_data)
+            print(f"DEBUG: Adding barcode for processing: {barcode_data['barcode']}")
         
-        print(f"DEBUG: Found {len(unfound_barcodes)} barcodes to retry")
+        print(f"DEBUG: Found {len(unfound_barcodes)} barcodes to process")
         
         for barcode_data in unfound_barcodes:
             try:
@@ -2261,14 +2192,11 @@ def process_unfound_barcodes_background():
                     })
                     
                 else:
-                    # Still not found, update retry timestamp
-                    db.collection('unfound_barcodes').document(barcode_data['id']).update({
-                        'lastRetry': processed_at,
-                        'retryCount': barcode_data.get('retryCount', 0) + 1
-                    })
+                    # Still not found, delete the barcode instead of retrying
+                    db.collection('unfound_barcodes').document(barcode_data['id']).delete()
                     
                     processing_status['error_count'] += 1
-                    print(f"DEBUG: ❌ Still not found: {barcode_data['barcode']}")
+                    print(f"DEBUG: ❌ Not found, deleting barcode: {barcode_data['barcode']}")
                     
                     # Add to processed history
                     processed_barcodes_history.append({
@@ -2276,8 +2204,8 @@ def process_unfound_barcodes_background():
                         'productName': None,
                         'success': False,
                         'processedAt': processed_at,
-                        'result': 'Not Found',
-                        'error': 'Product not found on Smart Consumer'
+                        'result': 'Deleted - Not Found',
+                        'error': 'Product not found on Smart Consumer - deleted from unfound list'
                     })
                 
                 # Keep only last 100 processed barcodes to prevent memory issues
