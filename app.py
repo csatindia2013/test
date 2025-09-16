@@ -2785,14 +2785,14 @@ def extract_product_data_selenium(driver, soup, barcode):
             print(f"DEBUG: Detected error page - URL: {current_url}, Title: {page_title}")
             return None
         
-        # Check for common error messages in page content
+        # Check for specific error messages in page content (more precise)
         error_messages = [
             "string indices must be integers, not 'str'",
-            "not found",
-            "error",
             "page not found",
             "product not found",
-            "invalid barcode"
+            "invalid barcode",
+            "barcode not found",
+            "no product data available"
         ]
         
         page_text = driver.page_source.lower()

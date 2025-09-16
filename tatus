@@ -1,0 +1,5 @@
+[33m6080d9a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Fix background processor retry logic completely - Remove all remaining retry logic from get_unfound_barcodes function - Process all unfound barcodes without retry restrictions - Ensure deletion behavior works properly - Fix the circular processing issue
+[33m6cddb1a[m Implement automatic deletion of unfound barcodes
+[33m651f54a[m Fix background processor issues and improve efficiency
+[33m8ab7ae0[m Make application production-ready with comprehensive improvements
+[33mf18c399[m Fix datetime parsing and add database debugging
