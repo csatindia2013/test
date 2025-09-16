@@ -2785,20 +2785,39 @@ def extract_product_data_selenium(driver, soup, barcode):
             print(f"DEBUG: Detected error page - URL: {current_url}, Title: {page_title}")
             return None
         
-        # Check for specific error messages in page content (more precise)
+        # Check for specific error messages in page content (very precise)
+        # Only reject if we find clear error indicators, not just any mention of "not found"
         error_messages = [
             "string indices must be integers, not 'str'",
+            "404 error",
             "page not found",
-            "product not found",
             "invalid barcode",
             "barcode not found",
-            "no product data available"
+            "no product data available",
+            "error: product not found"  # Only reject if it's clearly an error message
         ]
         
         page_text = driver.page_source.lower()
         for error_msg in error_messages:
             if error_msg.lower() in page_text:
                 print(f"DEBUG: Detected error message in page: '{error_msg}'")
+                return None
+        
+        # Additional check: Only reject if we find "product not found" in a clear error context
+        if "product not found" in page_text:
+            # Check if it's in a clear error context (like error messages, alerts, etc.)
+            error_contexts = [
+                "error: product not found",
+                "alert: product not found", 
+                "message: product not found",
+                "status: product not found"
+            ]
+            
+            is_clear_error = any(context in page_text for context in error_contexts)
+            if not is_clear_error:
+                print(f"DEBUG: Found 'product not found' but not in clear error context - proceeding with extraction")
+            else:
+                print(f"DEBUG: Detected clear error context with 'product not found'")
                 return None
         
         # Try to extract product name using multiple strategies
