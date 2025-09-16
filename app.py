@@ -2913,6 +2913,20 @@ def extract_product_data_selenium(driver, soup, barcode):
                             break
                 except Exception as e:
                     print(f"DEBUG: Error in price regex search: {e}")
+            
+            # Additional fallback: Look for any element containing currency symbols
+            if product_data['price'] == 'N/A':
+                try:
+                    # Look for elements with currency symbols using XPath
+                    currency_elements = driver.find_elements(By.XPATH, "//*[contains(text(), '₹') or contains(text(), 'Rs') or contains(text(), '$')]")
+                    for elem in currency_elements:
+                        text = elem.text.strip()
+                        if any(currency in text for currency in ['₹', 'Rs', '$', '€', '£']) and len(text) < 20:  # Reasonable price length
+                            product_data['price'] = text
+                            print(f"DEBUG: Found price using XPath fallback: {product_data['price']}")
+                            break
+                except Exception as e:
+                    print(f"DEBUG: Error in XPath price search: {e}")
                     
         except Exception as e:
             print(f"DEBUG: Error extracting price: {e}")
